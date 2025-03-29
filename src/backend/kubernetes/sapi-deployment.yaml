@@ -1,0 +1,210 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-sapi
+  namespace: payment-system
+  labels:
+    app: payment-sapi
+    component: api
+    tier: internal
+    part-of: payment-system
+  annotations:
+    kubernetes.io/change-cause: "Initial deployment of Payment-SAPI with token-based authentication"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: payment-sapi
+  template:
+    metadata:
+      labels:
+        app: payment-sapi
+        component: api
+        tier: internal
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8081"
+        conjur.org/container-mode: "sidecar"
+        conjur.org/secrets-refresh-interval: "1m"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - payment-sapi
+              topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: payment-sapi
+        image: payment-registry/payment-sapi:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8081
+          protocol: TCP
+        - name: management
+          containerPort: 8082
+          protocol: TCP
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: CONJUR_APPLIANCE_URL
+          value: "https://conjur.payment-system.svc.cluster.local"
+        - name: CONJUR_ACCOUNT
+          value: "payment-system"
+        - name: CONJUR_AUTHN_LOGIN
+          value: "payment-sapi-service"
+        - name: CONJUR_SSL_CERTIFICATE
+          value: "/conjur/ssl/conjur.pem"
+        - name: CONJUR_CREDENTIAL_PATH
+          value: "payment-sapi/credentials"
+        - name: TOKEN_VERIFICATION_KEY_PATH
+          value: "/etc/payment/keys/verification-key.pem"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: JAVA_OPTS
+          value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms1g -Xmx2g -Dspring.config.location=/config/application.yml"
+        volumeMounts:
+        - name: config-volume
+          mountPath: "/config"
+        - name: conjur-ssl
+          mountPath: "/conjur/ssl"
+          readOnly: true
+        - name: conjur-token
+          mountPath: "/run/conjur"
+        - name: feature-flags
+          mountPath: "/config/feature-flags.properties"
+          subPath: "feature-flags.properties"
+        - name: logback-config
+          mountPath: "/config/logback-spring.xml"
+          subPath: "logback-spring.xml"
+        - name: tmp-volume
+          mountPath: "/tmp"
+        - name: conjur-secrets
+          mountPath: "/etc/payment/keys"
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 12
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      - name: conjur-sidecar
+        image: cyberark/conjur-openshift-authenticator:latest
+        imagePullPolicy: Always
+        env:
+        - name: CONJUR_APPLIANCE_URL
+          value: "https://conjur.payment-system.svc.cluster.local"
+        - name: CONJUR_ACCOUNT
+          value: "payment-system"
+        - name: CONJUR_AUTHN_LOGIN
+          value: "payment-sapi-service"
+        - name: CONJUR_SSL_CERTIFICATE
+          value: "/conjur/ssl/conjur.pem"
+        - name: CONTAINER_MODE
+          value: "sidecar"
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        volumeMounts:
+        - name: conjur-ssl
+          mountPath: "/conjur/ssl"
+          readOnly: true
+        - name: conjur-token
+          mountPath: "/run/conjur"
+        - name: conjur-secrets
+          mountPath: "/conjur/secrets"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: payment-sapi-config
+      - name: conjur-ssl
+        configMap:
+          name: conjur-connect
+          items:
+          - key: ssl-certificate
+            path: conjur.pem
+      - name: conjur-token
+        emptyDir:
+          medium: Memory
+      - name: conjur-secrets
+        emptyDir:
+          medium: Memory
+      - name: feature-flags
+        configMap:
+          name: payment-sapi-config
+          items:
+          - key: feature-flags.properties
+            path: feature-flags.properties
+      - name: logback-config
+        configMap:
+          name: payment-sapi-config
+          items:
+          - key: logback-spring.xml
+            path: logback-spring.xml
+      - name: tmp-volume
+        emptyDir: {}
+      terminationGracePeriodSeconds: 60
+      serviceAccountName: payment-sapi-sa
