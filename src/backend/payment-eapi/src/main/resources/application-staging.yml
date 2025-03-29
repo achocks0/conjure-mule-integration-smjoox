@@ -1,0 +1,145 @@
+# Staging environment configuration for Payment-EAPI service
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres-staging}:${DB_PORT:5432}/${DB_NAME:payment_staging}
+    username: ${DB_USERNAME:payment_staging}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 5
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        show_sql: false
+        format_sql: false
+  redis:
+    host: ${REDIS_HOST:redis-staging}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD}
+    ssl: true
+    timeout: 2000
+    database: 0
+    lettuce:
+      pool:
+        min-idle: 5
+        max-idle: 15
+        max-active: 30
+        time-between-eviction-runs: 300000
+  flyway:
+    clean-on-validation-error: false
+    clean-disabled: true
+
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 150
+    max-connections: 8000
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+    min-response-size: 1024
+
+# Conjur vault integration configuration for staging environment
+conjur:
+  url: ${CONJUR_URL:https://conjur-staging.example.com}
+  account: ${CONJUR_ACCOUNT:payment-system-staging}
+  authn-login: ${CONJUR_AUTHN_LOGIN:payment-eapi-service-staging}
+  ssl-certificate: ${CONJUR_SSL_CERTIFICATE:/path/to/conjur/staging-certificate.pem}
+  connection-timeout: 5000
+  read-timeout: 3000
+  retry-count: 3
+  retry-backoff-multiplier: 1.5
+
+# JWT token configuration for staging environment
+token:
+  issuer: payment-eapi-staging
+  audience: payment-sapi-staging
+  expiration-seconds: 3600
+  renewal-enabled: true
+  signing-key-path: ${TOKEN_SIGNING_KEY_PATH:conjur/path/to/staging-signing-key}
+
+# Payment-SAPI integration configuration for staging
+payment-sapi:
+  url: ${PAYMENT_SAPI_URL:https://payment-sapi-staging.internal}
+  connection-timeout: 5000
+  read-timeout: 10000
+  retry-count: 2
+
+# Metrics configuration for staging
+metrics:
+  enabled: true
+  prefix: payment-staging
+  retention-days: 15
+
+# Spring Boot Actuator configuration for monitoring and management
+management:
+  endpoint:
+    health:
+      show-details: when-authorized
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /management
+
+# Logging configuration for staging
+logging:
+  level:
+    root: INFO
+    com.payment: ${LOG_LEVEL:INFO}
+    org.springframework: WARN
+    org.hibernate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /var/log/payment-eapi/application-staging.log
+    max-size: 100MB
+    max-history: 15
+
+# Backward compatibility configuration for existing vendor integrations
+backward-compatibility:
+  enabled: true
+  header-auth:
+    client-id-header: X-Client-ID
+    client-secret-header: X-Client-Secret
+
+# Credential rotation configuration for staging
+credential-rotation:
+  transition-period-seconds: 86400  # 24 hours
+  check-interval-seconds:. 300      # 5 minutes
+  monitoring-enabled: true
+
+# Circuit breaker configuration for staging
+circuit-breaker:
+  conjur:
+    failure-threshold: 50
+    wait-duration-in-open-state: 30000
+    permitted-number-of-calls-in-half-open-state: 10
+  redis:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+  payment-sapi:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+
+# Security configuration for staging
+security:
+  rate-limiting:
+    enabled: true
+    limit-per-minute: 150  # Higher than dev, but still controlled
+    burst-capacity: 300
+  headers:
+    content-security-policy: "default-src 'self'"
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    x-xss-protection: "1; mode=block"
+    strict-transport-security: "max-age=31536000; includeSubDomains"
