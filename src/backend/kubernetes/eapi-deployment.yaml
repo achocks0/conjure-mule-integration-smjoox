@@ -1,0 +1,191 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-eapi
+  namespace: payment-system
+  labels:
+    app: payment-eapi
+    component: api
+    tier: external
+    part-of: payment-system
+  annotations:
+    kubernetes.io/change-cause: "Initial deployment of Payment-EAPI with Conjur vault integration"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: payment-eapi
+  template:
+    metadata:
+      labels:
+        app: payment-eapi
+        component: api
+        tier: external
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - payment-eapi
+              topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: payment-eapi
+        image: payment-registry/payment-eapi:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: management
+          containerPort: 8081
+          protocol: TCP
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          valueFrom:
+            secretKeyRef:
+              name: payment-eapi-secrets
+              key: SPRING_PROFILES_ACTIVE
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: payment-eapi-secrets
+              key: REDIS_PASSWORD
+        - name: CONJUR_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-eapi-secrets
+              key: CONJUR_URL
+        - name: CONJUR_ACCOUNT
+          valueFrom:
+            secretKeyRef:
+              name: payment-eapi-secrets
+              key: CONJUR_ACCOUNT
+        - name: CONJUR_AUTHN_LOGIN
+          valueFrom:
+            secretKeyRef:
+              name: payment-eapi-secrets
+              key: CONJUR_AUTHN_LOGIN
+        - name: CONJUR_AUTHN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: payment-eapi-secrets
+              key: CONJUR_AUTHN_API_KEY
+        - name: PAYMENT_SAPI_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-eapi-secrets
+              key: PAYMENT_SAPI_URL
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: JAVA_OPTS
+          value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms1g -Xmx2g -Dspring.config.location=/config/application.yml"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /config
+        - name: conjur-certificate
+          mountPath: /etc/conjur
+          readOnly: true
+        - name: jwt-signing-key
+          mountPath: /etc/secrets
+          readOnly: true
+        - name: feature-flags
+          mountPath: /config/feature-flags.properties
+          subPath: feature-flags.properties
+        - name: logback-config
+          mountPath: /config/logback-spring.xml
+          subPath: logback-spring.xml
+        - name: tmp-volume
+          mountPath: /tmp
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 12
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: payment-eapi-config
+      - name: conjur-certificate
+        secret:
+          secretName: payment-eapi-secrets
+          items:
+          - key: CONJUR_SSL_CERTIFICATE
+            path: conjur-certificate.pem
+      - name: jwt-signing-key
+        secret:
+          secretName: payment-eapi-secrets
+          items:
+          - key: JWT_SIGNING_KEY
+            path: jwt-signing-key
+      - name: feature-flags
+        configMap:
+          name: payment-eapi-config
+          items:
+          - key: feature-flags.properties
+            path: feature-flags.properties
+      - name: logback-config
+        configMap:
+          name: payment-eapi-config
+          items:
+          - key: logback-spring.xml
+            path: logback-spring.xml
+      - name: tmp-volume
+        emptyDir: {}
+      terminationGracePeriodSeconds: 60
+      serviceAccountName: payment-eapi-sa
