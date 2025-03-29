@@ -1,0 +1,123 @@
+# Staging environment configuration for Payment-SAPI
+# Part of the Payment API Security Enhancement project
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres-staging}:${DB_PORT:5432}/${DB_NAME:payment_staging}
+    username: ${DB_USERNAME:payment_staging}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 5
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        show_sql: false
+        format_sql: false
+  
+  redis:
+    host: ${REDIS_HOST:redis-staging}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD}
+    ssl: true
+    timeout: 2000
+    database: 0
+    lettuce:
+      pool:
+        min-idle: 5
+        max-idle: 15
+        max-active: 30
+        time-between-eviction-runs: 300000
+  
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000
+    cache-names: tokens
+  
+  flyway:
+    enabled: true
+    clean-on-validation-error: false
+    clean-disabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8081
+  servlet:
+    context-path: /internal/v1
+  tomcat:
+    threads:
+      max: 150
+    max-connections: 8000
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+    min-response-size: 1024
+
+token:
+  audience: payment-sapi-staging
+  issuers: payment-eapi-staging
+  verification-key-path: ${TOKEN_VERIFICATION_KEY_PATH:conjur/path/to/staging-verification-key}
+  renewal-enabled: true
+  renewal-threshold-seconds: 300
+
+payment:
+  backend:
+    url: ${PAYMENT_BACKEND_URL:https://payment-backend-staging.internal}
+    connection-timeout: 5000
+    read-timeout: 10000
+    retry-count: 2
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.payment.sapi: ${LOG_LEVEL:INFO}
+    org.springframework: WARN
+    org.hibernate: WARN
+  file: /var/log/payment-sapi/application-staging.log
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+circuit-breaker:
+  redis:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+  payment-backend:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+
+security:
+  rate-limiting:
+    enabled: true
+    limit-per-minute: 500
+    burst-capacity: 1000
+  headers:
+    content-security-policy: "default-src 'self'"
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    x-xss-protection: 1; mode=block
+    strict-transport-security: max-age=31536000; includeSubDomains
