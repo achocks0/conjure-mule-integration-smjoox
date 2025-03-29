@@ -1,0 +1,133 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres-prod}:${DB_PORT:5432}/${DB_NAME:payment_prod}
+    username: ${DB_USERNAME:payment_prod}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        show_sql: false
+        format_sql: false
+  redis:
+    host: ${REDIS_HOST:redis-prod}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD}
+    ssl: true
+    timeout: 2000
+    database: 0
+    lettuce:
+      pool:
+        min-idle: 10
+        max-idle: 20
+        max-active: 50
+        time-between-eviction-runs: 300000
+  flyway:
+    clean-disabled: true
+
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 200
+    max-connections: 10000
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+    min-response-size: 1024
+
+conjur:
+  url: ${CONJUR_URL:https://conjur.example.com}
+  account: ${CONJUR_ACCOUNT:payment-system}
+  authn-login: ${CONJUR_AUTHN_LOGIN:payment-eapi-service}
+  ssl-certificate: ${CONJUR_SSL_CERTIFICATE:/path/to/conjur/certificate.pem}
+  connection-timeout: 5000
+  read-timeout: 3000
+  retry-count: 3
+  retry-backoff-multiplier: 1.5
+
+token:
+  issuer: payment-eapi
+  audience: payment-sapi
+  expiration-seconds: 3600
+  renewal-enabled: true
+  signing-key-path: ${TOKEN_SIGNING_KEY_PATH:conjur/path/to/signing-key}
+
+payment-sapi:
+  url: ${PAYMENT_SAPI_URL:https://payment-sapi.internal}
+  connection-timeout: 5000
+  read-timeout: 10000
+  retry-count: 2
+
+metrics:
+  enabled: true
+  prefix: payment-prod
+  retention-days: 30
+
+management:
+  endpoint:
+    health:
+      show-details: never
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+      base-path: /management
+
+logging:
+  level:
+    root: WARN
+    com.payment: ${LOG_LEVEL:INFO}
+    org.springframework: WARN
+    org.hibernate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /var/log/payment-eapi/application-prod.log
+    max-size: 100MB
+    max-history: 30
+
+backward-compatibility:
+  enabled: true
+  header-auth:
+    client-id-header: X-Client-ID
+    client-secret-header: X-Client-Secret
+
+credential-rotation:
+  transition-period-seconds: 86400
+  check-interval-seconds: 300
+  monitoring-enabled: true
+
+circuit-breaker:
+  conjur:
+    failure-threshold: 50
+    wait-duration-in-open-state: 30000
+    permitted-number-of-calls-in-half-open-state: 10
+  redis:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+  payment-sapi:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+
+security:
+  rate-limiting:
+    enabled: true
+    limit-per-minute: 100
+    burst-capacity: 200
+  headers:
+    content-security-policy: "default-src 'self'"
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    x-xss-protection: "1; mode=block"
+    strict-transport-security: "max-age=31536000; includeSubDomains"
