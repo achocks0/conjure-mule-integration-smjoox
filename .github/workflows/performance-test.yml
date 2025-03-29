@@ -1,0 +1,204 @@
+name: Performance Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run tests against'
+        required: true
+        type: choice
+        options: ['dev', 'test', 'staging', 'prod']
+        default: 'dev'
+      duration_seconds:
+        description: 'Test duration in seconds'
+        required: false
+        type: number
+        default: 300
+      concurrent_users:
+        description: 'Number of concurrent users'
+        required: false
+        type: number
+        default: 50
+      ramp_up_seconds:
+        description: 'Ramp-up period in seconds'
+        required: false
+        type: number
+        default: 60
+      test_type:
+        description: 'Type of performance test to run'
+        required: true
+        type: choice
+        options: ['load', 'stress', 'endurance', 'spike']
+        default: 'load'
+  schedule:
+    - cron: '0 0 * * 1'  # Run at midnight every Monday
+  workflow_run:
+    workflows: ['Deploy']
+    branches: ['develop']
+    types: ['completed']
+    paths: ['src/backend/**', 'src/scripts/**']
+
+env:
+  REGISTRY_URL: ghcr.io/${{ github.repository_owner }}
+  PYTHON_VERSION: '3.9'
+  DEFAULT_DURATION_SECONDS: '300'
+  DEFAULT_CONCURRENT_USERS: '50'
+  DEFAULT_RAMP_UP_SECONDS: '60'
+
+jobs:
+  prepare:
+    name: Prepare Performance Test
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      duration_seconds: ${{ steps.set-params.outputs.duration_seconds }}
+      concurrent_users: ${{ steps.set-params.outputs.concurrent_users }}
+      ramp_up_seconds: ${{ steps.set-params.outputs.ramp_up_seconds }}
+      test_type: ${{ steps.set-params.outputs.test_type }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set environment
+        id: set-env
+        run: echo "environment=${{ github.event.inputs.environment || 'dev' }}" >> $GITHUB_OUTPUT
+
+      - name: Set test parameters
+        id: set-params
+        run: |
+          echo "duration_seconds=${{ github.event.inputs.duration_seconds || env.DEFAULT_DURATION_SECONDS }}" >> $GITHUB_OUTPUT
+          echo "concurrent_users=${{ github.event.inputs.concurrent_users || env.DEFAULT_CONCURRENT_USERS }}" >> $GITHUB_OUTPUT
+          echo "ramp_up_seconds=${{ github.event.inputs.ramp_up_seconds || env.DEFAULT_RAMP_UP_SECONDS }}" >> $GITHUB_OUTPUT
+          echo "test_type=${{ github.event.inputs.test_type || 'load' }}" >> $GITHUB_OUTPUT
+
+      - name: Display test plan
+        run: |
+          echo "Performance Test Plan:"
+          echo "Environment: ${{ steps.set-env.outputs.environment }}"
+          echo "Duration: ${{ steps.set-params.outputs.duration_seconds }} seconds"
+          echo "Concurrent Users: ${{ steps.set-params.outputs.concurrent_users }}"
+          echo "Ramp-up Period: ${{ steps.set-params.outputs.ramp_up_seconds }} seconds"
+          echo "Test Type: ${{ steps.set-params.outputs.test_type }}"
+
+  load_test:
+    name: Run Load Test
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: ${{ needs.prepare.outputs.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        uses: aws-actions/amazon-eks-update-kubeconfig@v1
+        with:
+          cluster-name: "${{ secrets[format('{0}_EKS_CLUSTER_NAME', needs.prepare.outputs.environment)] }}"
+          region: ${{ secrets.AWS_REGION }}
+
+      - name: Get service endpoint
+        run: echo "API_ENDPOINT=$(kubectl get svc payment-eapi -n payment-system -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')" >> $GITHUB_ENV
+
+      - name: Run authentication load test
+        run: cd src/scripts/testing && python load_test_auth.py --environment ${{ needs.prepare.outputs.environment }} --duration ${{ needs.prepare.outputs.duration_seconds }} --concurrent-users ${{ needs.prepare.outputs.concurrent_users }} --ramp-up ${{ needs.prepare.outputs.ramp_up_seconds }} --test-type ${{ needs.prepare.outputs.test_type }} --output-format html --generate-graphs
+        env:
+          API_BASE_URL: https://${{ env.API_ENDPOINT }}
+          TEST_CLIENT_ID: "${{ secrets[format('{0}_TEST_CLIENT_ID', needs.prepare.outputs.environment)] }}"
+          TEST_CLIENT_SECRET: "${{ secrets[format('{0}_TEST_CLIENT_SECRET', needs.prepare.outputs.environment)] }}"
+
+      - name: Upload performance test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-test-results
+          path: |
+            src/scripts/testing/test_reports/performance-report.html
+            src/scripts/testing/test_reports/performance-metrics.json
+            src/scripts/testing/test_reports/performance-graphs/*
+          retention-days: 30
+
+  analyze_results:
+    name: Analyze Test Results
+    needs: [prepare, load_test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Download test results
+        uses: actions/download-artifact@v3
+        with:
+          name: performance-test-results
+          path: test-results
+
+      - name: Analyze performance metrics
+        run: cd src/scripts/utilities && python analyze_performance_results.py --input-file ../../test-results/performance-metrics.json --thresholds-file ../../src/scripts/testing/config/performance_thresholds.json --environment ${{ needs.prepare.outputs.environment }} --output-file ../../performance-analysis.html
+
+      - name: Check SLA compliance
+        run: cd src/scripts/utilities && python check_sla_compliance.py --input-file ../../test-results/performance-metrics.json --thresholds-file ../../src/scripts/testing/config/performance_thresholds.json --environment ${{ needs.prepare.outputs.environment }}
+        continue-on-error: true
+
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-analysis
+          path: performance-analysis.html
+          retention-days: 30
+
+  notify_results:
+    name: Notify Results
+    needs: [prepare, load_test, analyze_results]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Download test results
+        uses: actions/download-artifact@v3
+        with:
+          name: performance-test-results
+          path: test-results
+
+      - name: Download analysis results
+        uses: actions/download-artifact@v3
+        with:
+          name: performance-analysis
+          path: analysis-results
+
+      - name: Send notification
+        run: cd src/scripts/utilities && python send_notification.py --report-type performance --status ${{ job.status }} --environment ${{ needs.prepare.outputs.environment }} --metrics-path ../../test-results/performance-metrics.json --analysis-path ../../analysis-results/performance-analysis.html
+        env:
+          NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
