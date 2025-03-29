@@ -1,0 +1,140 @@
+# Description: Policy for Payment-SAPI service token validation and renewal in Conjur vault
+
+---
+- !policy
+  id: payment-sapi
+  body:
+    # Define the Payment-SAPI service identity
+    - !layer
+      id: sapi-service
+      annotations:
+        description: Layer for Payment-SAPI service authentication
+
+    # Define the host identity for the Payment-SAPI service
+    - !host
+      id: payment-sapi-service
+      annotations:
+        description: Host identity for Payment-SAPI service
+
+    # Add the Payment-SAPI service host to the service layer
+    - !grant
+      role: !layer sapi-service
+      member: !host payment-sapi-service
+
+    # Define the token validation structure
+    - !policy
+      id: tokens
+      body:
+        # Variable for storing verification key
+        - !variable
+          id: verification-key
+          annotations:
+            description: Public key for verifying JWT tokens
+
+        # Variable for storing token validation configuration
+        - !variable
+          id: validation-config
+          annotations:
+            description: Configuration for token validation including accepted issuers and audiences
+
+        # Variable for storing token renewal configuration
+        - !variable
+          id: renewal-config
+          annotations:
+            description: Configuration for token renewal including renewal threshold and endpoints
+
+    # Grant read permissions to the Payment-SAPI service for verification key
+    - !permit
+      role: !layer sapi-service
+      privilege: [read, execute]
+      resource: !variable tokens/verification-key
+
+    # Grant read permissions to the Payment-SAPI service for token validation configuration
+    - !permit
+      role: !layer sapi-service
+      privilege: [read, execute]
+      resource: !variable tokens/validation-config
+
+    # Grant read permissions to the Payment-SAPI service for token renewal configuration
+    - !permit
+      role: !layer sapi-service
+      privilege: [read, execute]
+      resource: !variable tokens/renewal-config
+
+    # Define authentication webservice for certificate-based authentication
+    - !webservice
+      id: sapi-auth
+      annotations:
+        description: Authentication service for Payment-SAPI
+
+    # Grant authentication permissions to the Payment-SAPI service
+    - !permit
+      role: !layer sapi-service
+      privilege: [authenticate]
+      resource: !webservice sapi-auth
+
+    # Define token validation policy
+    - !policy
+      id: token-validation
+      body:
+        # Variable for storing token validation statistics
+        - !variable
+          id: validation-stats
+          annotations:
+            description: Statistics for token validation operations
+
+        # Variable for storing token renewal statistics
+        - !variable
+          id: renewal-stats
+          annotations:
+            description: Statistics for token renewal operations
+
+    # Grant read and update permissions to the Payment-SAPI service for validation statistics
+    - !permit
+      role: !layer sapi-service
+      privilege: [read, execute, update]
+      resource: !variable token-validation/validation-stats
+
+    # Grant read and update permissions to the Payment-SAPI service for renewal statistics
+    - !permit
+      role: !layer sapi-service
+      privilege: [read, execute, update]
+      resource: !variable token-validation/renewal-stats
+
+    # Define a group for monitoring service access
+    - !group
+      id: monitoring-access
+      annotations:
+        description: Group for monitoring service identities to access token validation statistics
+
+    # Define integration with monitoring service
+    - !policy
+      id: monitoring-integration
+      body:
+        # Grant read permissions to monitoring access group for validation statistics
+        - !permit
+          role: !group monitoring-access
+          privilege: [read]
+          resource: !variable token-validation/validation-stats
+
+        # Grant read permissions to monitoring access group for renewal statistics
+        - !permit
+          role: !group monitoring-access
+          privilege: [read]
+          resource: !variable token-validation/renewal-stats
+
+    # Define integration with rotation service
+    - !policy
+      id: rotation-integration
+      body:
+        # Grant permissions to rotation service for verification key management
+        - !permit
+          role: &rotation-service
+          privilege: [read, execute, update]
+          resource: !variable tokens/verification-key
+
+        # Grant permissions to rotation service for validation configuration management
+        - !permit
+          role: &rotation-service
+          privilege: [read, execute, update]
+          resource: !variable tokens/validation-config
