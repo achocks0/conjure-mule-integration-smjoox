@@ -1,0 +1,266 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+    paths: [src/backend/**, src/scripts/**]
+  pull_request:
+    branches: [main, develop]
+    paths: [src/backend/**, src/scripts/**]
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly on Sunday at midnight
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  REGISTRY_URL: ghcr.io/${{ github.repository_owner }}
+  JAVA_VERSION: '11'
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  dependency-check:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'maven'
+
+      - name: Run OWASP Dependency Check
+        run: cd src/backend && ./mvnw org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7
+
+      - name: Upload dependency check results
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-check-report
+          path: src/backend/target/dependency-check-report.html
+          retention-days: 30
+
+  codeql-analysis:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: java, python
+          queries: security-extended
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'maven'
+
+      - name: Build with Maven
+        run: cd src/backend && ./mvnw clean compile
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+      - name: Upload CodeQL results
+        uses: actions/upload-artifact@v3
+        with:
+          name: codeql-results
+          path: ${{ github.workspace }}/results
+          retention-days: 30
+        if: always()
+
+  container-scan:
+    name: Container Image Scan
+    runs-on: ubuntu-latest
+    needs: [dependency-check, codeql-analysis]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker images for scanning
+        run: |
+          cd src/backend && docker build -f Dockerfile-eapi -t ${{ env.REGISTRY_URL }}/payment-eapi:scan .
+          docker build -f Dockerfile-sapi -t ${{ env.REGISTRY_URL }}/payment-sapi:scan .
+          docker build -f Dockerfile-rotation -t ${{ env.REGISTRY_URL }}/credential-rotation:scan .
+          docker build -f Dockerfile-monitoring -t ${{ env.REGISTRY_URL }}/monitoring:scan .
+
+      - name: Scan payment-eapi image
+        uses: aquasecurity/trivy-action@0.10.0
+        with:
+          image-ref: ${{ env.REGISTRY_URL }}/payment-eapi:scan
+          format: sarif
+          output: trivy-results-eapi.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: 'true'
+        continue-on-error: true
+
+      - name: Scan payment-sapi image
+        uses: aquasecurity/trivy-action@0.10.0
+        with:
+          image-ref: ${{ env.REGISTRY_URL }}/payment-sapi:scan
+          format: sarif
+          output: trivy-results-sapi.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: 'true'
+        continue-on-error: true
+
+      - name: Scan credential-rotation image
+        uses: aquasecurity/trivy-action@0.10.0
+        with:
+          image-ref: ${{ env.REGISTRY_URL }}/credential-rotation:scan
+          format: sarif
+          output: trivy-results-rotation.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: 'true'
+        continue-on-error: true
+
+      - name: Scan monitoring image
+        uses: aquasecurity/trivy-action@0.10.0
+        with:
+          image-ref: ${{ env.REGISTRY_URL }}/monitoring:scan
+          format: sarif
+          output: trivy-results-monitoring.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: 'true'
+        continue-on-error: true
+
+      - name: Upload Trivy scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-results
+          path: trivy-results-*.sarif
+          retention-days: 30
+
+  secret-scanning:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: '0'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install trufflehog3 gitpython
+
+      - name: Run TruffleHog
+        run: trufflehog3 --no-history --exclude-paths .trufflehog-exclude.txt --output=trufflehog-results.json .
+        continue-on-error: true
+
+      - name: Upload secret scanning results
+        uses: actions/upload-artifact@v3
+        with:
+          name: secret-scan-results
+          path: trufflehog-results.json
+          retention-days: 30
+
+      - name: Check for secrets
+        run: |
+          if [ -s trufflehog-results.json ]; then
+            echo "Secrets found in the repository. Please check the secret-scan-results artifact."
+            exit 1
+          else
+            echo "No secrets found."
+          fi
+
+  python-security-scan:
+    name: Python Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install bandit safety
+
+      - name: Run Bandit
+        run: bandit -r src/scripts -f json -o bandit-results.json
+        continue-on-error: true
+
+      - name: Run Safety
+        run: safety check -r src/scripts/requirements.txt --json > safety-results.json
+        continue-on-error: true
+
+      - name: Upload Python security scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-security-results
+          path: |
+            bandit-results.json
+            safety-results.json
+          retention-days: 30
+
+  security-scan-summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs: [dependency-check, codeql-analysis, container-scan, secret-scanning, python-security-scan]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Download all scan results
+        uses: actions/download-artifact@v3
+        with:
+          path: scan-results
+
+      - name: Generate security scan summary
+        run: cd src/scripts/utilities && python generate_security_report.py --input-dir ../../scan-results --output-file ../../security-scan-summary.html
+
+      - name: Upload security scan summary
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-scan-summary
+          path: security-scan-summary.html
+          retention-days: 90
+
+      - name: Send notification
+        if: always()
+        run: cd src/scripts/utilities && python send_notification.py --report-type security --status ${{ job.status }}
+        env:
+          NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
