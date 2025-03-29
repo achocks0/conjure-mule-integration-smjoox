@@ -1,0 +1,62 @@
+# Test configuration for Payment-EAPI service
+# This file overrides the base configuration in application.yml for testing purposes
+
+spring:
+  # Use in-memory H2 database for tests
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: ''
+    driver-class-name: org.h2.Driver
+  
+  # Configure JPA for tests
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        show_sql: true
+  
+  # Use embedded Redis for tests
+  redis:
+    host: localhost
+    port: 6370  # Different port than default to avoid conflicts
+    password: ''
+    ssl: false
+  
+  # Disable Flyway migrations for tests
+  flyway:
+    enabled: false
+
+# Mock Conjur vault for testing
+conjur:
+  url: http://localhost:8888/conjur
+  account: test-account
+  authn-login: test-service
+  ssl-certificate: classpath:test-cert.pem
+
+# JWT token test configuration
+token:
+  issuer: payment-eapi-test
+  audience: payment-sapi-test
+  expiration-seconds: 300  # Shorter expiration for tests
+  signing-key-path: classpath:test-signing-key.pem
+
+# Mock Payment-SAPI endpoint for tests
+payment-sapi:
+  url: http://localhost:8888/payment-sapi
+
+# Maintain backward compatibility configuration for tests
+backward-compatibility:
+  enabled: true
+  header-auth:
+    client-id-header: X-Client-ID
+    client-secret-header: X-Client-Secret
+
+# More verbose logging for tests
+logging:
+  level:
+    root: INFO
+    com.payment: DEBUG
+    org.springframework: INFO
