@@ -1,0 +1,134 @@
+# Production environment configuration for Payment-SAPI
+# Part of the Payment API Security Enhancement project
+
+spring:
+  # Database configuration
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres-prod}:${DB_PORT:5432}/${DB_NAME:payment}
+    username: ${DB_USERNAME:payment_prod}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+  
+  # JPA configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        show_sql: false
+        format_sql: false
+  
+  # Redis cache configuration for token storage
+  redis:
+    host: ${REDIS_HOST:redis-prod}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD}
+    ssl: true
+    timeout: 2000
+    database: 0
+    lettuce:
+      pool:
+        min-idle: 10
+        max-idle: 20
+        max-active: 50
+        time-between-eviction-runs: 300000
+  
+  # Cache configuration
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000  # 1 hour in milliseconds
+    cache-names: tokens
+  
+  # Database migration configuration
+  flyway:
+    enabled: true
+    clean-disabled: true
+    locations: classpath:db/migration
+
+# Server configuration
+server:
+  port: 8081
+  servlet:
+    context-path: /internal/v1
+  tomcat:
+    threads:
+      max: 200
+    max-connections: 10000
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+    min-response-size: 1024
+
+# Token validation configuration
+token:
+  audience: payment-sapi
+  issuers: payment-eapi
+  verification-key-path: ${TOKEN_VERIFICATION_KEY_PATH:conjur/path/to/verification-key}
+  renewal-enabled: true
+  renewal-threshold-seconds: 300
+
+# Payment backend integration
+payment:
+  backend:
+    url: ${PAYMENT_BACKEND_URL:https://payment-backend.internal}
+    connection-timeout: 5000
+    read-timeout: 15000
+    retry-count: 2
+
+# Monitoring and management
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Logging configuration
+logging:
+  level:
+    root: INFO
+    com.payment.sapi: ${LOG_LEVEL:INFO}
+    org.springframework: WARN
+    org.hibernate: WARN
+  file: /var/log/payment-sapi/application-prod.log
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Circuit breaker configuration
+circuit-breaker:
+  redis:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+  payment-backend:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+
+# Security configuration
+security:
+  rate-limiting:
+    enabled: true
+    limit-per-minute: 1000
+    burst-capacity: 2000
+  headers:
+    content-security-policy: "default-src 'self'"
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    x-xss-protection: 1; mode=block
+    strict-transport-security: max-age=31536000; includeSubDomains
