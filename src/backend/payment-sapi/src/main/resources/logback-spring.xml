@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" scanPeriod="30 seconds">
+    <!-- Properties -->
+    <property name="LOG_PATH" value="${LOG_PATH:-/var/log/payment-sapi}" />
+    <property name="LOG_ARCHIVE" value="${LOG_ARCHIVE:-/var/log/payment-sapi/archive}" />
+    <property name="LOG_LEVEL" value="${LOG_LEVEL:-INFO}" />
+
+    <!-- Appenders -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/application.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_ARCHIVE}/application.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>false</includeCallerData>
+        <appender-ref ref="FILE" />
+    </appender>
+
+    <appender name="JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/application.json</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdc>true</includeMdc>
+            <includeContext>true</includeContext>
+            <customFields>{"application":"payment-sapi","environment":"${SPRING_PROFILES_ACTIVE:-dev}"}</customFields>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_ARCHIVE}/application.%d{yyyy-MM-dd}.json</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="SECURITY" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/security.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_ARCHIVE}/security.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>90</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Loggers -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+    </root>
+
+    <logger name="com.payment.sapi" level="${LOG_LEVEL}" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+    </logger>
+
+    <!-- Security-specific loggers -->
+    <logger name="com.payment.sapi.service.TokenValidationService" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+        <appender-ref ref="SECURITY" />
+    </logger>
+
+    <logger name="com.payment.sapi.service.TokenRenewalService" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+        <appender-ref ref="SECURITY" />
+    </logger>
+
+    <logger name="com.payment.sapi.filter.TokenAuthenticationFilter" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+        <appender-ref ref="SECURITY" />
+    </logger>
+
+    <logger name="com.payment.sapi.service.AuditService" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+        <appender-ref ref="SECURITY" />
+    </logger>
+
+    <!-- Framework loggers -->
+    <logger name="org.springframework" level="WARN" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+    </logger>
+
+    <logger name="org.hibernate" level="WARN" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+    </logger>
+
+    <!-- Environment-specific configurations -->
+    <springProfile name="dev">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </root>
+        <logger name="com.payment.sapi" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </logger>
+        <logger name="org.springframework.security" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </logger>
+    </springProfile>
+
+    <springProfile name="test">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </root>
+        <logger name="com.payment.sapi" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </logger>
+    </springProfile>
+
+    <springProfile name="staging">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </root>
+        <logger name="com.payment.sapi" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+        <logger name="org.springframework" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+        <logger name="org.hibernate" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+    </springProfile>
+
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </root>
+        <logger name="com.payment.sapi" level="INFO" additivity="false">
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+        <logger name="org.springframework" level="WARN" additivity="false">
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+        <logger name="org.hibernate" level="WARN" additivity="false">
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+    </springProfile>
+    
+    <!-- 
+    SECURITY CONSIDERATIONS:
+    
+    1. Sensitive Data Masking:
+       - For robust protection against logging sensitive data, implement a custom converter 
+         that masks tokens, credentials, and personal identifiable information.
+       - Example implementation would be a class like com.payment.sapi.logging.SensitiveDataMaskingConverter
+         that implements ch.qos.logback.classic.pattern.MessageConverter
+       - Application code should use structured logging and avoid logging sensitive data directly.
+    
+    2. Audit Trail:
+       - The SECURITY appender is configured with extended retention (90 days) for compliance requirements.
+       - Security-relevant events from authentication and token services are directed to this appender.
+       - Implement appropriate access controls on log files, especially security.log.
+    
+    3. Correlation IDs:
+       - All log formats include %X{correlationId} to track requests across distributed systems.
+       - Ensure your application populates the MDC with a correlationId for each request.
+       - This can be implemented using a filter or interceptor in your application.
+    -->
+    
+    <!--
+    PERFORMANCE CONSIDERATIONS:
+    
+    1. Asynchronous Logging:
+       - The AsyncAppender with a queue size of 512 provides non-blocking logging.
+       - Setting discardingThreshold to 0 ensures no logs are discarded, even under high load.
+       - This significantly improves application performance by offloading I/O operations.
+    
+    2. Selective Logging:
+       - Different log levels for application and framework code reduce log volume.
+       - Production environments use a more restrictive logging configuration.
+       - Use ${LOG_LEVEL} environment variable to adjust application logging without redeployment.
+    
+    3. Log Rotation:
+       - Time-based rolling policies prevent logs from consuming excessive disk space.
+       - Old logs are automatically archived and eventually deleted based on maxHistory.
+       - Separate retention policies for regular logs (30 days) and security logs (90 days).
+    -->
+</configuration>
