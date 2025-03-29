@@ -1,0 +1,273 @@
+version: '3.8'
+
+services:
+  # Payment External API (EAPI)
+  # Handles vendor authentication using Client ID/Secret headers
+  # and forwards authenticated requests to internal services using JWT tokens
+  payment-eapi:
+    build:
+      context: .
+      dockerfile: Dockerfile-eapi
+    image: payment-eapi:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=devpassword
+      - CONJUR_URL=http://conjur:80
+      - CONJUR_ACCOUNT=payment-system
+      - CONJUR_AUTHN_LOGIN=payment-eapi-service
+      - CONJUR_AUTHN_API_KEY=dev-api-key
+      - PAYMENT_SAPI_URL=http://payment-sapi:8081
+      - LOG_LEVEL=INFO
+      - TOKEN_SIGNING_KEY_PATH=/run/secrets/jwt-signing-key
+    volumes:
+      - ./payment-eapi/src/main/resources/application-dev.yml:/app/config/application.yml
+      - ./logs/payment-eapi:/var/log/payment-eapi
+    secrets:
+      - jwt-signing-key
+    depends_on:
+      redis:
+        condition: service_healthy
+      conjur:
+        condition: service_healthy
+      payment-sapi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - payment-network
+
+  # Payment System API (SAPI)
+  # Internal service that processes payment transactions with token-based authentication
+  payment-sapi:
+    build:
+      context: .
+      dockerfile: Dockerfile-sapi
+    image: payment-sapi:latest
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=payment
+      - DB_USERNAME=payment_user
+      - DB_PASSWORD=payment_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=devpassword
+      - TOKEN_VERIFICATION_KEY_PATH=/run/secrets/jwt-verification-key
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./payment-sapi/src/main/resources/application-dev.yml:/app/config/application.yml
+      - ./logs/payment-sapi:/var/log/payment-sapi
+    secrets:
+      - jwt-verification-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/internal/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - payment-network
+
+  # Credential Rotation Service
+  # Service for managing secure credential rotation without service disruption
+  credential-rotation:
+    build:
+      context: .
+      dockerfile: Dockerfile-rotation
+    image: credential-rotation:latest
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=rotation
+      - DB_USERNAME=rotation_user
+      - DB_PASSWORD=rotation_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=devpassword
+      - CONJUR_URL=http://conjur:80
+      - CONJUR_ACCOUNT=payment-system
+      - CONJUR_AUTHN_LOGIN=rotation-service
+      - CONJUR_AUTHN_API_KEY=dev-rotation-api-key
+      - AUTO_ROTATION_ENABLED=false
+      - NOTIFICATION_ENDPOINT=http://payment-eapi:8080/api/notifications
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./credential-rotation/src/main/resources/application-dev.yml:/app/config/application.yml
+      - ./logs/credential-rotation:/var/log/credential-rotation
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      conjur:
+        condition: service_healthy
+      payment-eapi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/rotation/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - payment-network
+
+  # Monitoring Service
+  # Monitoring service for collecting metrics, generating alerts, and providing dashboards
+  monitoring:
+    build:
+      context: .
+      dockerfile: Dockerfile-monitoring
+    image: payment-monitoring:latest
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - MONITORING_DB_URL=jdbc:postgresql://postgres:5432/monitoring
+      - MONITORING_DB_USERNAME=monitoring_user
+      - MONITORING_DB_PASSWORD=monitoring_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=devpassword
+      - PAYMENT_EAPI_URL=http://payment-eapi:8080
+      - PAYMENT_SAPI_URL=http://payment-sapi:8081
+      - CONJUR_VAULT_URL=http://conjur:80
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./monitoring/src/main/resources/application-dev.yml:/app/config/application.yml
+      - ./monitoring/src/main/resources/alerts.yml:/app/config/alerts.yml
+      - ./logs/monitoring:/var/log/monitoring
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      payment-eapi:
+        condition: service_healthy
+      payment-sapi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/api/monitoring/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - payment-network
+
+  # PostgreSQL Database
+  # PostgreSQL database for storing credential metadata, audit logs, and monitoring data
+  postgres:
+    image: postgres:13-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - payment-network
+
+  # Redis Cache
+  # Redis cache for storing authentication tokens and credential metadata
+  redis:
+    image: redis:6.2-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--requirepass", "devpassword"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "devpassword", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - payment-network
+
+  # Conjur Vault
+  # Conjur vault for secure credential storage and management
+  conjur:
+    image: cyberark/conjur:latest
+    ports:
+      - "80:80"
+    environment:
+      - CONJUR_ACCOUNT=payment-system
+      - CONJUR_DATA_KEY=dev-data-key
+      - CONJUR_AUTHENTICATORS=authn
+      - CONJUR_LOG_LEVEL=INFO
+      - CONJUR_ADMIN_PASSWORD=admin
+    volumes:
+      - conjur-data:/opt/conjur/data
+      - ./scripts/conjur-policy:/opt/conjur/policy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - payment-network
+
+# Persistent volumes for data storage
+volumes:
+  # Persistent volume for PostgreSQL data
+  postgres-data:
+    driver: local
+  # Persistent volume for Redis data
+  redis-data:
+    driver: local
+  # Persistent volume for Conjur vault data
+  conjur-data:
+    driver: local
+
+# Network configuration
+networks:
+  # Internal network for all payment system components
+  payment-network:
+    driver: bridge
+
+# Secret management for sensitive data
+secrets:
+  # Private key for signing JWT tokens
+  jwt-signing-key:
+    file: ./secrets/jwt-signing-key.pem
+  # Public key for verifying JWT tokens
+  jwt-verification-key:
+    file: ./secrets/jwt-verification-key.pem
