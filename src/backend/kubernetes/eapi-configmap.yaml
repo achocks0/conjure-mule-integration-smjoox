@@ -1,0 +1,263 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-eapi-config
+  namespace: payment-system
+  labels:
+    app: payment-eapi
+    component: api
+    tier: external
+    part-of: payment-system
+data:
+  application.yml: |
+    spring:
+      application:
+        name: payment-eapi
+      profiles:
+        active: ${SPRING_PROFILES_ACTIVE:prod}
+      redis:
+        host: ${REDIS_HOST:redis}
+        port: ${REDIS_PORT:6379}
+        password: ${REDIS_PASSWORD}
+        ssl: true
+        timeout: 2000
+        database: 0
+        lettuce:
+          pool:
+            min-idle: 10
+            max-idle: 20
+            max-active: 50
+            time-between-eviction-runs: 300000
+
+    server:
+      port: 8080
+      tomcat:
+        threads:
+          max: 200
+        max-connections: 10000
+      compression:
+        enabled: true
+        mime-types: application/json,application/xml,text/html,text/xml,text/plain
+        min-response-size: 1024
+
+    conjur:
+      url: ${CONJUR_URL}
+      account: ${CONJUR_ACCOUNT}
+      authn-login: ${CONJUR_AUTHN_LOGIN}
+      ssl-certificate: /etc/conjur/conjur-certificate.pem
+      connection-timeout: 5000
+      read-timeout: 3000
+      retry-count: 3
+      retry-backoff-multiplier: 1.5
+
+    token:
+      issuer: payment-eapi
+      audience: payment-sapi
+      expiration-seconds: 3600
+      renewal-enabled: true
+      signing-key-path: ${JWT_SIGNING_KEY}
+
+    payment-sapi:
+      url: ${PAYMENT_SAPI_URL}
+      connection-timeout: 5000
+      read-timeout: 10000
+      retry-count: 2
+
+    metrics:
+      enabled: true
+      prefix: payment-prod
+      retention-days: 30
+
+    management:
+      endpoint:
+        health:
+          show-details: never
+      endpoints:
+        web:
+          exposure:
+            include: health,info,metrics,prometheus
+          base-path: /api/management
+
+    logging:
+      level:
+        root: INFO
+        com.payment: ${LOG_LEVEL:INFO}
+        org.springframework: WARN
+        org.hibernate: WARN
+
+    backward-compatibility:
+      enabled: true
+      header-auth:
+        client-id-header: X-Client-ID
+        client-secret-header: X-Client-Secret
+
+    credential-rotation:
+      transition-period-seconds: 86400
+      check-interval-seconds: 300
+      monitoring-enabled: true
+
+    circuit-breaker:
+      conjur:
+        failure-threshold: 50
+        wait-duration-in-open-state: 30000
+        permitted-number-of-calls-in-half-open-state: 10
+      redis:
+        failure-threshold: 50
+        wait-duration-in-open-state: 15000
+        permitted-number-of-calls-in-half-open-state: 20
+      payment-sapi:
+        failure-threshold: 50
+        wait-duration-in-open-state: 15000
+        permitted-number-of-calls-in-half-open-state: 20
+
+    security:
+      rate-limiting:
+        enabled: true
+        limit-per-minute: 100
+        burst-capacity: 200
+      headers:
+        content-security-policy: "default-src 'self'"
+        x-content-type-options: nosniff
+        x-frame-options: DENY
+        x-xss-protection: "1; mode=block"
+        strict-transport-security: "max-age=31536000; includeSubDomains"
+  logback-spring.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <configuration>
+        <property name="LOG_PATH" value="${LOG_PATH:-/var/log/payment-eapi}" />
+        <property name="LOG_ARCHIVE" value="${LOG_ARCHIVE:-/var/log/payment-eapi/archive}" />
+        <property name="LOG_LEVEL" value="${LOG_LEVEL:-INFO}" />
+
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+
+        <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+            <queueSize>512</queueSize>
+            <discardingThreshold>0</discardingThreshold>
+            <includeCallerData>false</includeCallerData>
+            <appender-ref ref="FILE" />
+        </appender>
+
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_PATH}/application.log</file>
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_ARCHIVE}/application.%d{yyyy-MM-dd}.log</fileNamePattern>
+                <maxHistory>30</maxHistory>
+            </rollingPolicy>
+        </appender>
+
+        <appender name="JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_PATH}/application.json</file>
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdc>true</includeMdc>
+                <includeContext>true</includeContext>
+                <customFields>{"application":"payment-eapi","environment":"${SPRING_PROFILES_ACTIVE:-prod}"}</customFields>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_ARCHIVE}/application.%d{yyyy-MM-dd}.json</fileNamePattern>
+                <maxHistory>30</maxHistory>
+            </rollingPolicy>
+        </appender>
+
+        <appender name="SECURITY" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_PATH}/security.log</file>
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_ARCHIVE}/security.%d{yyyy-MM-dd}.log</fileNamePattern>
+                <maxHistory>90</maxHistory>
+            </rollingPolicy>
+        </appender>
+
+        <logger name="com.payment.eapi" level="${LOG_LEVEL}" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+
+        <logger name="com.payment.eapi.security" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+            <appender-ref ref="SECURITY" />
+        </logger>
+
+        <logger name="com.payment.eapi.service.ConjurService" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+            <appender-ref ref="SECURITY" />
+        </logger>
+
+        <logger name="com.payment.eapi.service.AuthenticationService" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+            <appender-ref ref="SECURITY" />
+        </logger>
+
+        <logger name="com.payment.eapi.service.TokenService" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+            <appender-ref ref="SECURITY" />
+        </logger>
+
+        <logger name="org.springframework" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+
+        <logger name="org.hibernate" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </root>
+
+        <springProfile name="prod">
+            <root level="INFO">
+                <appender-ref ref="ASYNC" />
+                <appender-ref ref="JSON" />
+            </root>
+        </springProfile>
+    </configuration>
+  feature-flags.properties: |
+    # Feature Flags for Payment-EAPI
+
+    # Authentication Features
+    feature.backward-compatibility.enabled=true
+    feature.token-based-auth.enabled=true
+    feature.credential-rotation.enabled=true
+
+    # Security Features
+    feature.rate-limiting.enabled=true
+    feature.circuit-breaker.enabled=true
+    feature.token-renewal.enabled=true
+
+    # Monitoring Features
+    feature.metrics.enabled=true
+    feature.health-checks.enabled=true
+    feature.audit-logging.enabled=true
+
+    # Performance Features
+    feature.async-logging.enabled=true
+    feature.response-compression.enabled=true
+    feature.connection-pooling.enabled=true
+
+    # Integration Features
+    feature.conjur-integration.enabled=true
+    feature.redis-caching.enabled=true
