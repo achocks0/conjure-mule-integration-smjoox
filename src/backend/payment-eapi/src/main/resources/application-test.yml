@@ -1,0 +1,76 @@
+# Test environment configuration for Payment-EAPI service
+# This configuration extends the base application.yml for test environment
+
+# Database configuration for tests
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payment_test
+    username: test_user
+    password: test_password
+    hikari:
+      minimum-idle: 1
+      maximum-pool-size: 5
+  jpa:
+    hibernate:
+      ddl-auto: create-drop  # Recreate the schema for each test run
+    properties:
+      hibernate:
+        show_sql: true
+        format_sql: true
+  redis:
+    host: localhost
+    port: 6379
+    password: test_redis_password
+    ssl: false
+    database: 1  # Use a different database number for tests
+
+# Conjur vault integration configuration for test environment
+conjur:
+  url: http://localhost:9000/mock-conjur  # Mock Conjur server for tests
+  account: test-account
+  authn-login: payment-eapi-test-service
+  ssl-certificate: classpath:test/conjur-cert.pem
+  connection-timeout: 1000  # Fast timeout for tests
+  read-timeout: 1000        # Fast timeout for tests
+
+# JWT token configuration for test environment
+token:
+  issuer: payment-eapi-test
+  audience: payment-sapi-test
+  expiration-seconds: 300  # Shorter expiration for tests
+  signing-key-path: conjur/test/path/to/signing-key
+
+# Payment-SAPI integration configuration for test environment
+payment-sapi:
+  url: http://localhost:8081/mock-sapi
+  connection-timeout: 1000
+  read-timeout: 2000
+
+# Logging configuration for test environment
+logging:
+  level:
+    root: INFO
+    com.payment: DEBUG  # More detailed logging for our application in tests
+    org.springframework: INFO
+    org.hibernate: INFO
+
+# Health endpoint configuration for tests
+management:
+  endpoint:
+    health:
+      show-details: always  # Always show detailed health in tests
+
+# Circuit breaker configuration for tests
+circuit-breaker:
+  conjur:
+    failure-threshold: 2  # Lower threshold for tests
+    wait-duration-in-open-state: 5000  # Shorter wait time
+    permitted-number-of-calls-in-half-open-state: 2
+  redis:
+    failure-threshold: 2
+    wait-duration-in-open-state: 5000
+    permitted-number-of-calls-in-half-open-state: 2
+  payment-sapi:
+    failure-threshold: 2
+    wait-duration-in-open-state: 5000
+    permitted-number-of-calls-in-half-open-state: 2
