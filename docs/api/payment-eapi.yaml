@@ -1,0 +1,506 @@
+openapi: 3.0.0
+info:
+  title: Payment API
+  description: API for processing payments with enhanced security measures while maintaining backward compatibility with existing vendor integrations.
+  version: 1.0.0
+  contact:
+    name: Payment API Support
+    email: api-support@example.com
+servers:
+  - url: https://api.example.com/api/v1
+    description: Production server
+  - url: https://staging-api.example.com/api/v1
+    description: Staging server
+security:
+  - ClientCredentials: []
+paths:
+  /auth/token:
+    post:
+      summary: Authenticate and get token
+      description: Authenticates a vendor using Client ID and Client Secret provided in the request body and returns a JWT token.
+      operationId: authenticate
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticationRequest'
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationResponse'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/header-token:
+    post:
+      summary: Authenticate with headers and get token
+      description: Authenticates a vendor using Client ID and Client Secret provided in request headers and returns a JWT token.
+      operationId: authenticateWithHeaders
+      tags:
+        - Authentication
+      parameters:
+        - name: X-Client-ID
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Client ID for authentication
+        - name: X-Client-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Client Secret for authentication
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationResponse'
+        '400':
+          description: Bad request - missing headers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/validate:
+    post:
+      summary: Validate token
+      description: Validates a JWT token and returns whether it is valid.
+      operationId: validateToken
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Token validation result
+          content:
+            application/json:
+              schema:
+                type: boolean
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/refresh:
+    post:
+      summary: Refresh token
+      description: Refreshes an expired JWT token and returns a new token.
+      operationId: refreshToken
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Successful token refresh
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationResponse'
+        '401':
+          description: Unauthorized - invalid or non-refreshable token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/status/{tokenId}:
+    get:
+      summary: Check token status
+      description: Checks if a token is valid and returns its status information.
+      operationId: checkTokenStatus
+      tags:
+        - Authentication
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Token ID to check
+      responses:
+        '200':
+          description: Token status information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  expires_at:
+                    type: string
+                    format: date-time
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /payments:
+    post:
+      summary: Process payment
+      description: Processes a payment transaction.
+      operationId: processPayment
+      tags:
+        - Payments
+      parameters:
+        - name: X-Client-ID
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Client ID for authentication
+        - name: X-Client-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Client Secret for authentication
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Correlation ID for request tracking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '200':
+          description: Successful payment processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /payments/{paymentId}:
+    get:
+      summary: Get payment status
+      description: Retrieves the status of a payment by ID.
+      operationId: getPaymentStatus
+      tags:
+        - Payments
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Payment ID to retrieve
+        - name: X-Client-ID
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Client ID for authentication
+        - name: X-Client-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Client Secret for authentication
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Correlation ID for request tracking
+      responses:
+        '200':
+          description: Payment information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '401':
+          description: Unauthorized - invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Payment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      summary: Basic health check
+      description: Provides a basic health check endpoint that returns the status of the service.
+      operationId: checkHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - UP
+                      - DOWN
+  /health/detailed:
+    get:
+      summary: Detailed health check
+      description: Provides a detailed health check endpoint that includes the status of dependencies.
+      operationId: checkDetailedHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Detailed health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - UP
+                      - DOWN
+                      - DEGRADED
+                  conjur:
+                    type: string
+                    enum:
+                      - UP
+                      - DOWN
+                  redis:
+                    type: string
+                    enum:
+                      - UP
+                      - DOWN
+                  payment_sapi:
+                    type: string
+                    enum:
+                      - UP
+                      - DOWN
+  /health/liveness:
+    get:
+      summary: Liveness check
+      description: Provides a lightweight liveness check endpoint for Kubernetes health probes.
+      operationId: checkLiveness
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is alive
+  /health/readiness:
+    get:
+      summary: Readiness check
+      description: Provides a readiness check endpoint for Kubernetes health probes that verifies the service is ready to accept traffic.
+      operationId: checkReadiness
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is ready to accept traffic
+        '503':
+          description: Service is not ready to accept traffic
+components:
+  schemas:
+    AuthenticationRequest:
+      type: object
+      required:
+        - client_id
+        - client_secret
+      properties:
+        client_id:
+          type: string
+          description: Client ID for authentication
+        client_secret:
+          type: string
+          description: Client Secret for authentication
+    AuthenticationResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT token for authentication
+        expires_at:
+          type: string
+          format: date-time
+          description: Token expiration timestamp
+        token_type:
+          type: string
+          description: Type of token, always 'Bearer'
+          default: Bearer
+    PaymentRequest:
+      type: object
+      required:
+        - amount
+        - currency
+        - reference
+      properties:
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Payment amount
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          pattern: '^[A-Z]{3}$'
+          description: Payment currency code (ISO 4217)
+          example: USD
+        reference:
+          type: string
+          maxLength: 50
+          description: Payment reference
+        description:
+          type: string
+          maxLength: 255
+          description: Payment description
+    PaymentResponse:
+      type: object
+      properties:
+        payment_id:
+          type: string
+          description: Unique payment identifier
+        status:
+          type: string
+          description: Payment status
+          enum:
+            - PENDING
+            - PROCESSING
+            - COMPLETED
+            - FAILED
+        amount:
+          type: number
+          format: decimal
+          description: Payment amount
+        currency:
+          type: string
+          description: Payment currency code (ISO 4217)
+          example: USD
+        reference:
+          type: string
+          description: Payment reference
+        description:
+          type: string
+          description: Payment description
+        created_at:
+          type: string
+          format: date-time
+          description: Payment creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Payment last update timestamp
+    ErrorResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+          description: Error code identifying the type of error
+        message:
+          type: string
+          description: Human-readable error message
+        requestId:
+          type: string
+          description: Unique identifier for the request
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp when the error occurred
+  securitySchemes:
+    ClientCredentials:
+      type: apiKey
+      description: Client ID and Client Secret provided in request headers
+      name: X-Client-ID, X-Client-Secret
+      in: header
+tags:
+  - name: Authentication
+    description: Authentication operations
+  - name: Payments
+    description: Payment processing operations
+  - name: Health
+    description: Health check operations
