@@ -1,0 +1,269 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main, develop]
+    paths: [src/backend/**, src/scripts/**]
+  pull_request:
+    branches: [main, develop]
+    paths: [src/backend/**, src/scripts/**]
+  workflow_dispatch:
+
+env:
+  REGISTRY_URL: ghcr.io/${{ github.repository_owner }}
+  MAVEN_OPTS: -Xmx2g -Xms1g
+  JAVA_VERSION: '11'
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  build:
+    name: Build and Unit Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '${{ env.JAVA_VERSION }}'
+          cache: 'maven'
+      
+      - name: Build with Maven
+        run: cd src/backend && ./mvnw clean package
+        env:
+          SPRING_PROFILES_ACTIVE: 'test'
+      
+      - name: Run unit tests
+        run: cd src/backend && ./mvnw test
+      
+      - name: Generate JaCoCo coverage report
+        run: cd src/backend && ./mvnw jacoco:report
+      
+      - name: Check code coverage
+        run: cd src/backend && ./mvnw jacoco:check -Djacoco.minimum.coverage=0.85
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts
+          path: |
+            src/backend/payment-eapi/target/payment-eapi.jar
+            src/backend/payment-sapi/target/payment-sapi.jar
+            src/backend/credential-rotation/target/credential-rotation.jar
+            src/backend/monitoring/target/monitoring.jar
+          retention-days: 1
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            src/backend/*/target/surefire-reports
+            src/backend/*/target/site/jacoco
+          retention-days: 7
+
+  static-analysis:
+    name: Static Code Analysis
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '${{ env.JAVA_VERSION }}'
+          cache: 'maven'
+      
+      - name: Run checkstyle
+        run: cd src/backend && ./mvnw checkstyle:check
+      
+      - name: Run SpotBugs
+        run: cd src/backend && ./mvnw com.github.spotbugs:spotbugs-maven-plugin:check
+      
+      - name: Run OWASP dependency check
+        run: cd src/backend && ./mvnw org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7
+      
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v3
+        with:
+          name: static-analysis-results
+          path: |
+            src/backend/*/target/checkstyle-result.xml
+            src/backend/*/target/spotbugsXml.xml
+            src/backend/target/dependency-check-report.html
+          retention-days: 7
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    services:
+      postgres:
+        image: postgres:13-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      
+      redis:
+        image: redis:6-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '${{ env.JAVA_VERSION }}'
+          cache: 'maven'
+      
+      - name: Run integration tests
+        run: cd src/backend && ./mvnw failsafe:integration-test failsafe:verify
+        env:
+          SPRING_PROFILES_ACTIVE: 'test'
+          SPRING_DATASOURCE_URL: 'jdbc:postgresql://localhost:5432/testdb'
+          SPRING_DATASOURCE_USERNAME: 'testuser'
+          SPRING_DATASOURCE_PASSWORD: 'testpassword'
+          SPRING_REDIS_HOST: 'localhost'
+          SPRING_REDIS_PORT: '6379'
+          CONJUR_URL: 'http://localhost:8080'
+          CONJUR_ACCOUNT: 'test'
+          CONJUR_AUTHN_LOGIN: 'test-service'
+          CONJUR_AUTHN_API_KEY: 'test-api-key'
+      
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: integration-test-results
+          path: src/backend/*/target/failsafe-reports
+          retention-days: 7
+
+  build-docker-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [build, static-analysis, integration-test]
+    if: "${{ github.event_name != 'pull_request' }}"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts
+          path: artifacts
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build Docker images
+        run: cd src/backend && chmod +x ./scripts/build.sh && ./scripts/build.sh
+        env:
+          REGISTRY_URL: '${{ env.REGISTRY_URL }}'
+          VERSION: '1.0.0-${{ github.run_number }}'
+          BUILD_NUMBER: '${{ github.run_number }}'
+          SKIP_TESTS: 'true'
+          SCAN_IMAGES: 'true'
+          PUSH_IMAGES: "${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}"
+      
+      - name: Save Docker image tags
+        run: |
+          echo "${{ env.REGISTRY_URL }}/payment-eapi:1.0.0-${{ github.run_number }}" > image-tags.txt
+          echo "${{ env.REGISTRY_URL }}/payment-sapi:1.0.0-${{ github.run_number }}" >> image-tags.txt
+          echo "${{ env.REGISTRY_URL }}/credential-rotation:1.0.0-${{ github.run_number }}" >> image-tags.txt
+          echo "${{ env.REGISTRY_URL }}/monitoring:1.0.0-${{ github.run_number }}" >> image-tags.txt
+      
+      - name: Upload image tags
+        uses: actions/upload-artifact@v3
+        with:
+          name: docker-images
+          path: image-tags.txt
+          retention-days: 7
+
+  python-tests:
+    name: Python Script Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '${{ env.PYTHON_VERSION }}'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt pytest pytest-cov flake8
+      
+      - name: Run flake8
+        run: flake8 src/scripts
+      
+      - name: Run pytest
+        run: cd src/scripts && pytest tests/ --cov=. --cov-report=xml
+      
+      - name: Upload Python test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-test-results
+          path: src/scripts/coverage.xml
+          retention-days: 7
+
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [build, static-analysis, integration-test, build-docker-images, python-tests]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '${{ env.PYTHON_VERSION }}'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+      
+      - name: Download test results
+        uses: actions/download-artifact@v3
+        with:
+          path: all-artifacts
+      
+      - name: Generate build report
+        run: cd src/scripts/utilities && python generate_build_report.py --input-dir ../../all-artifacts --output-file ../../build-report.html
+      
+      - name: Upload build report
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-report
+          path: build-report.html
+          retention-days: 30
+      
+      - name: Send notification
+        if: always()
+        run: cd src/scripts/utilities && python send_notification.py --report-type build --status ${{ job.status }}
+        env:
+          NOTIFICATION_WEBHOOK: '${{ secrets.NOTIFICATION_WEBHOOK }}'
