@@ -1,0 +1,154 @@
+spring:
+  profiles: dev
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payment_monitoring
+    username: payment_user
+    password: payment_password
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  redis:
+    host: localhost
+    port: 6379
+    password: ''
+    ssl: false
+    timeout: 2000
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 2
+        max-wait: -1
+
+server:
+  port: 8084
+  tomcat:
+    max-threads: 50
+    min-spare-threads: 5
+    max-connections: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      show-details: always
+
+monitoring:
+  enabled: true
+  metrics-retention-days: 7
+  connection-timeout: 5000
+  read-timeout: 10000
+  scheduled-checks:
+    enabled: true
+    cron: '0 */15 * * * *'
+  notification-channels:
+    pagerduty:
+      enabled: false
+      severity-levels:
+        - CRITICAL
+      service-key: 'dummy-service-key'
+      response-times:
+        security: '15m'
+        performance: '30m'
+        availability: '15m'
+    email:
+      enabled: true
+      severity-levels:
+        - CRITICAL
+        - HIGH
+      recipients:
+        - 'dev-team@example.com'
+      response-times:
+        security:
+          critical: '15m'
+          high: '1h'
+        performance:
+          critical: '30m'
+          high: '2h'
+        availability:
+          critical: '15m'
+          high: '1h'
+    slack:
+      enabled: true
+      severity-levels:
+        - CRITICAL
+        - HIGH
+        - MEDIUM
+        - LOW
+      webhook-url: 'https://hooks.slack.com/services/dummy/webhook/url'
+      channels:
+        security: '#dev-security-alerts'
+        performance: '#dev-performance-alerts'
+        availability: '#dev-availability-alerts'
+  services:
+    payment-eapi:
+      url: 'http://localhost:8080'
+      health-check-path: '/actuator/health'
+      metrics-path: '/actuator/prometheus'
+    payment-sapi:
+      url: 'http://localhost:8081'
+      health-check-path: '/actuator/health'
+      metrics-path: '/actuator/prometheus'
+    conjur-vault:
+      url: 'http://localhost:8082'
+      health-check-path: '/health'
+      metrics-path: '/metrics'
+    redis-cache:
+      host: 'localhost'
+      port: 6379
+      password: ''
+  alert-thresholds:
+    security:
+      auth-failure-warning-threshold: 0.1
+      auth-failure-critical-threshold: 0.2
+      unauthorized-attempts-warning-threshold: 10
+      unauthorized-attempts-critical-threshold: 20
+      token-validation-failure-warning-threshold: 0.1
+      token-validation-failure-critical-threshold: 0.2
+      credential-access-anomaly-warning-threshold: 3.0
+      credential-access-anomaly-critical-threshold: 5.0
+    performance:
+      api-response-time-warning-threshold: 500
+      api-response-time-critical-threshold: 1000
+      authentication-time-warning-threshold: 300
+      authentication-time-critical-threshold: 600
+      token-generation-time-warning-threshold: 200
+      token-generation-time-critical-threshold: 400
+      conjur-vault-response-time-warning-threshold: 300
+      conjur-vault-response-time-critical-threshold: 600
+    availability:
+      api-availability-warning-threshold: 0.99
+      api-availability-critical-threshold: 0.95
+      conjur-vault-availability-warning-threshold: 0.99
+      conjur-vault-availability-critical-threshold: 0.95
+      redis-cache-availability-warning-threshold: 0.99
+      redis-cache-availability-critical-threshold: 0.95
+      database-availability-warning-threshold: 0.99
+      database-availability-critical-threshold: 0.95
+
+logging:
+  level:
+    root: INFO
+    com.payment: DEBUG
+    org.springframework: INFO
+    com.payment.monitoring: DEBUG
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %highlight(%-5level) %logger{36} - %msg%n'
+    file: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
+  file:
+    name: 'logs/monitoring-service-dev.log'
+    max-size: '10MB'
+    max-history: 7
