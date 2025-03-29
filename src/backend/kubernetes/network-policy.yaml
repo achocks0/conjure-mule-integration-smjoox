@@ -1,0 +1,161 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: payment-system
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eapi-ingress
+  namespace: payment-system
+spec:
+  podSelector:
+    matchLabels:
+      app: payment-eapi
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eapi-to-sapi
+  namespace: payment-system
+spec:
+  podSelector:
+    matchLabels:
+      app: payment-sapi
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: payment-eapi
+    ports:
+    - protocol: TCP
+      port: 8081
+    - protocol: TCP
+      port: 8082
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eapi-to-redis
+  namespace: payment-system
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: payment-eapi
+    ports:
+    - protocol: TCP
+      port: 6379
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sapi-to-redis
+  namespace: payment-system
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: payment-sapi
+    ports:
+    - protocol: TCP
+      port: 6379
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eapi-to-conjur
+  namespace: payment-system
+spec:
+  podSelector:
+    matchLabels:
+      app: conjur
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: payment-eapi
+    ports:
+    - protocol: TCP
+      port: 443
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitoring-access
+  namespace: payment-system
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9090
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+    - protocol: TCP
+      port: 9121
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-dns
+  namespace: payment-system
+spec:
+  podSelector: {}
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  policyTypes:
+  - Egress
