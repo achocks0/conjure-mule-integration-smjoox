@@ -1,0 +1,529 @@
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - staging
+          - prod
+        default: 'dev'
+      version:
+        description: 'Version to deploy (defaults to latest successful build)'
+        required: false
+        type: string
+      components:
+        description: 'Components to deploy (comma-separated: eapi,sapi,rotation,monitoring)'
+        required: false
+        type: string
+        default: 'eapi,sapi'
+      skip_verification:
+        description: 'Skip deployment verification'
+        required: false
+        type: boolean
+        default: false
+  workflow_run:
+    workflows: ["Build and Test"]
+    branches: [develop]
+    types: [completed]
+    paths:
+      - src/backend/**
+      - src/scripts/**
+  push:
+    branches: [develop]
+    paths:
+      - src/backend/kubernetes/**
+      - src/backend/scripts/deploy.sh
+
+env:
+  REGISTRY_URL: ghcr.io/${{ github.repository_owner }} # Global variable: Docker registry URL
+  PYTHON_VERSION: 3.9 # Global variable: Python version
+
+jobs:
+  prepare:
+    name: Prepare Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      version: ${{ steps.set-version.outputs.version }}
+      deploy_eapi: ${{ steps.set-components.outputs.deploy_eapi }}
+      deploy_sapi: ${{ steps.set-components.outputs.deploy_sapi }}
+      deploy_rotation: ${{ steps.set-components.outputs.deploy_rotation }}
+      deploy_monitoring: ${{ steps.set-components.outputs.deploy_monitoring }}
+      verify_deployment: ${{ steps.set-verification.outputs.verify_deployment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3 # External import: actions/checkout@v3
+        # Action for checking out repository code
+
+      - name: Set environment
+        id: set-env
+        run: echo "environment=${{ github.event.inputs.environment || 'dev' }}" >> $GITHUB_OUTPUT
+
+      - name: Set version
+        id: set-version
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=1.0.0-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set components
+        id: set-components
+        run: |
+          COMPONENTS="${{ github.event.inputs.components || 'eapi,sapi' }}"
+          echo "deploy_eapi=$(echo $COMPONENTS | grep -q 'eapi' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "deploy_sapi=$(echo $COMPONENTS | grep -q 'sapi' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "deploy_rotation=$(echo $COMPONENTS | grep -q 'rotation' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "deploy_monitoring=$(echo $COMPONENTS | grep -q 'monitoring' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+      - name: Set verification
+        id: set-verification
+        run: echo "verify_deployment=$([ "${{ github.event.inputs.skip_verification }}" == 'true' ] && echo 'false' || echo 'true')" >> $GITHUB_OUTPUT
+
+      - name: Download image tags
+        uses: actions/download-artifact@v3 # External import: actions/download-artifact@v3
+        with:
+          name: docker-images
+          path: artifacts
+        if: "${{ github.event.inputs.version == '' }}"
+
+      - name: Display deployment plan
+        run: |
+          echo "Deployment Plan:"
+          echo "Environment: ${{ steps.set-env.outputs.environment }}"
+          echo "Version: ${{ steps.set-version.outputs.version }}"
+          echo "Components: ${{ github.event.inputs.components || 'eapi,sapi' }}"
+          echo "Verification: ${{ steps.set-verification.outputs.verify_deployment }}"
+
+  deploy_dev:
+    name: Deploy to Development
+    needs: prepare
+    if: "${{ needs.prepare.outputs.environment == 'dev' }}"
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3 # External import: actions/checkout@v3
+        # Action for checking out repository code
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1 # External import: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        uses: aws-actions/amazon-eks-update-kubeconfig@v1 # External import: aws-actions/amazon-eks-update-kubeconfig@v1
+        with:
+          cluster-name: ${{ secrets.DEV_EKS_CLUSTER_NAME }}
+          region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2 # External import: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          cd src/backend
+          chmod +x ./scripts/deploy.sh
+          ./scripts/deploy.sh \
+            --environment dev \
+            --namespace payment-system \
+            --registry ${{ env.REGISTRY_URL }} \
+            --version ${{ needs.prepare.outputs.version }} \
+            ${{ needs.prepare.outputs.deploy_eapi == 'true' && '--eapi' || '--no-eapi' }} \
+            ${{ needs.prepare.outputs.deploy_sapi == 'true' && '--sapi' || '--no-sapi' }} \
+            ${{ needs.prepare.outputs.deploy_rotation == 'true' && '--rotation' || '--no-rotation' }} \
+            ${{ needs.prepare.outputs.deploy_monitoring == 'true' && '--monitoring' || '--no-monitoring' }} \
+            ${{ needs.prepare.outputs.verify_deployment == 'true' && '--verify' || '--no-verify' }}
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Set up Python
+        uses: actions/setup-python@v4 # External import: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Generate deployment report
+        run: |
+          cd src/scripts/utilities
+          python generate_deployment_report.py \
+            --environment dev \
+            --version ${{ needs.prepare.outputs.version }} \
+            --output ../../deployment-report.html
+
+      - name: Upload deployment report
+        uses: actions/upload-artifact@v3 # External import: actions/upload-artifact@v3
+        with:
+          name: deployment-report-dev
+          path: deployment-report.html
+          retention-days: 30
+
+      - name: Send notification
+        if: always()
+        run: |
+          cd src/scripts/utilities
+          python send_notification.py \
+            --report-type deployment \
+            --status ${{ job.status }} \
+            --environment dev
+        env:
+          NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
+
+  deploy_test:
+    name: Deploy to Test
+    needs: prepare
+    if: "${{ needs.prepare.outputs.environment == 'test' }}"
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3 # External import: actions/checkout@v3
+        # Action for checking out repository code
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1 # External import: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        uses: aws-actions/amazon-eks-update-kubeconfig@v1 # External import: aws-actions/amazon-eks-update-kubeconfig@v1
+        with:
+          cluster-name: ${{ secrets.TEST_EKS_CLUSTER_NAME }}
+          region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2 # External import: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          cd src/backend
+          chmod +x ./scripts/deploy.sh
+          ./scripts/deploy.sh \
+            --environment test \
+            --namespace payment-system \
+            --registry ${{ env.REGISTRY_URL }} \
+            --version ${{ needs.prepare.outputs.version }} \
+            ${{ needs.prepare.outputs.deploy_eapi == 'true' && '--eapi' || '--no-eapi' }} \
+            ${{ needs.prepare.outputs.deploy_sapi == 'true' && '--sapi' || '--no-sapi' }} \
+            ${{ needs.prepare.outputs.deploy_rotation == 'true' && '--rotation' || '--no-rotation' }} \
+            ${{ needs.prepare.outputs.deploy_monitoring == 'true' && '--monitoring' || '--no-monitoring' }} \
+            ${{ needs.prepare.outputs.verify_deployment == 'true' && '--verify' || '--no-verify' }}
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Set up Python
+        uses: actions/setup-python@v4 # External import: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Generate deployment report
+        run: |
+          cd src/scripts/utilities
+          python generate_deployment_report.py \
+            --environment test \
+            --version ${{ needs.prepare.outputs.version }} \
+            --output ../../deployment-report.html
+
+      - name: Upload deployment report
+        uses: actions/upload-artifact@v3 # External import: actions/upload-artifact@v3
+        with:
+          name: deployment-report-test
+          path: deployment-report.html
+          retention-days: 30
+
+      - name: Send notification
+        if: always()
+        run: |
+          cd src/scripts/utilities
+          python send_notification.py \
+            --report-type deployment \
+            --status ${{ job.status }} \
+            --environment test
+        env:
+          NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
+
+  deploy_staging:
+    name: Deploy to Staging
+    needs: prepare
+    if: "${{ needs.prepare.outputs.environment == 'staging' }}"
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3 # External import: actions/checkout@v3
+        # Action for checking out repository code
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1 # External import: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        uses: aws-actions/amazon-eks-update-kubeconfig@v1 # External import: aws-actions/amazon-eks-update-kubeconfig@v1
+        with:
+          cluster-name: ${{ secrets.STAGING_EKS_CLUSTER_NAME }}
+          region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2 # External import: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          cd src/backend
+          chmod +x ./scripts/deploy.sh
+          ./scripts/deploy.sh \
+            --environment staging \
+            --namespace payment-system \
+            --registry ${{ env.REGISTRY_URL }} \
+            --version ${{ needs.prepare.outputs.version }} \
+            ${{ needs.prepare.outputs.deploy_eapi == 'true' && '--eapi' || '--no-eapi' }} \
+            ${{ needs.prepare.outputs.deploy_sapi == 'true' && '--sapi' || '--no-sapi' }} \
+            ${{ needs.prepare.outputs.deploy_rotation == 'true' && '--rotation' || '--no-rotation' }} \
+            ${{ needs.prepare.outputs.deploy_monitoring == 'true' && '--monitoring' || '--no-monitoring' }} \
+            ${{ needs.prepare.outputs.verify_deployment == 'true' && '--verify' || '--no-verify' }}
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Set up Python
+        uses: actions/setup-python@v4 # External import: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Generate deployment report
+        run: |
+          cd src/scripts/utilities
+          python generate_deployment_report.py \
+            --environment staging \
+            --version ${{ needs.prepare.outputs.version }} \
+            --output ../../deployment-report.html
+
+      - name: Upload deployment report
+        uses: actions/upload-artifact@v3 # External import: actions/upload-artifact@v3
+        with:
+          name: deployment-report-staging
+          path: deployment-report.html
+          retention-days: 30
+
+      - name: Send notification
+        if: always()
+        run: |
+          cd src/scripts/utilities
+          python send_notification.py \
+            --report-type deployment \
+            --status ${{ job.status }} \
+            --environment staging
+        env:
+          NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
+
+  deploy_production:
+    name: Deploy to Production
+    needs: prepare
+    if: "${{ needs.prepare.outputs.environment == 'prod' }}"
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://payment-api.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3 # External import: actions/checkout@v3
+        # Action for checking out repository code
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1 # External import: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        uses: aws-actions/amazon-eks-update-kubeconfig@v1 # External import: aws-actions/amazon-eks-update-kubeconfig@v1
+        with:
+          cluster-name: ${{ secrets.PROD_EKS_CLUSTER_NAME }}
+          region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2 # External import: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Kubernetes (Blue-Green)
+        run: |
+          cd src/backend
+          chmod +x ./scripts/deploy.sh
+          ./scripts/deploy.sh \
+            --environment prod \
+            --namespace payment-system \
+            --registry ${{ env.REGISTRY_URL }} \
+            --version ${{ needs.prepare.outputs.version }} \
+            --blue-green \
+            ${{ needs.prepare.outputs.deploy_eapi == 'true' && '--eapi' || '--no-eapi' }} \
+            ${{ needs.prepare.outputs.deploy_sapi == 'true' && '--sapi' || '--no-sapi' }} \
+            ${{ needs.prepare.outputs.deploy_rotation == 'true' && '--rotation' || '--no-rotation' }} \
+            ${{ needs.prepare.outputs.deploy_monitoring == 'true' && '--monitoring' || '--no-monitoring' }} \
+            ${{ needs.prepare.outputs.verify_deployment == 'true' && '--verify' || '--no-verify' }}
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+
+      - name: Set up Python
+        uses: actions/setup-python@v4 # External import: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Generate deployment report
+        run: |
+          cd src/scripts/utilities
+          python generate_deployment_report.py \
+            --environment prod \
+            --version ${{ needs.prepare.outputs.version }} \
+            --output ../../deployment-report.html
+
+      - name: Upload deployment report
+        uses: actions/upload-artifact@v3 # External import: actions/upload-artifact@v3
+        with:
+          name: deployment-report-prod
+          path: deployment-report.html
+          retention-days: 90
+
+      - name: Send notification
+        if: always()
+        run: |
+          cd src/scripts/utilities
+          python send_notification.py \
+            --report-type deployment \
+            --status ${{ job.status }} \
+            --environment prod
+        env:
+          NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
+
+  run_smoke_tests:
+    name: Run Smoke Tests
+    needs: [prepare, deploy_dev, deploy_test, deploy_staging, deploy_production]
+    if: "${{ needs.prepare.outputs.verify_deployment == 'true' && (success('deploy_dev') || success('deploy_test') || success('deploy_staging') || success('deploy_production')) }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3 # External import: actions/checkout@v3
+        # Action for checking out repository code
+
+      - name: Set up Python
+        uses: actions/setup-python@v4 # External import: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Run smoke tests
+        run: |
+          cd src/scripts/testing
+          python test_authentication.py \
+            --environment ${{ needs.prepare.outputs.environment }} \
+            --smoke-test
+        env:
+          API_BASE_URL: "${{ secrets[format('{0}_API_BASE_URL', needs.prepare.outputs.environment)] }}"
+          TEST_CLIENT_ID: "${{ secrets[format('{0}_TEST_CLIENT_ID', needs.prepare.outputs.environment)] }}"
+          TEST_CLIENT_SECRET: "${{ secrets[format('{0}_TEST_CLIENT_SECRET', needs.prepare.outputs.environment)] }}"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3 # External import: actions/upload-artifact@v3
+        with:
+          name: smoke-test-results
+          path: src/scripts/testing/results/**
+          retention-days: 30
+
+  deployment_summary:
+    name: Deployment Summary
+    needs: [prepare, deploy_dev, deploy_test, deploy_staging, deploy_production, run_smoke_tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3 # External import: actions/checkout@v3
+        # Action for checking out repository code
+
+      - name: Set up Python
+        uses: actions/setup-python@v4 # External import: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r src/scripts/requirements.txt
+
+      - name: Download all scan results
+        uses: actions/download-artifact@v3 # External import: actions/upload-artifact@v3
+        with:
+          path: all-artifacts
+
+      - name: Generate deployment summary
+        run: |
+          cd src/scripts/utilities
+          python generate_deployment_summary.py \
+            --environment ${{ needs.prepare.outputs.environment }} \
+            --version ${{ needs.prepare.outputs.version }} \
+            --deploy-status ${{ (needs.prepare.outputs.environment == 'dev' && needs.deploy_dev.result) || (needs.prepare.outputs.environment == 'test' && needs.deploy_test.result) || (needs.prepare.outputs.environment == 'staging' && needs.deploy_staging.result) || (needs.prepare.outputs.environment == 'prod' && needs.deploy_production.result) || 'skipped' }} \
+            --smoke-test-status ${{ needs.run_smoke_tests.result || 'skipped' }} \
+            --output ../../deployment-summary.html
+
+      - name: Upload deployment summary
+        uses: actions/upload-artifact@v3 # External import: actions/upload-artifact@v3
+        with:
+          name: deployment-summary
+          path: deployment-summary.html
+          retention-days: 90
+
+      - name: Send summary notification
+        if: always()
+        run: |
+          cd src/scripts/utilities
+          python send_notification.py \
+            --report-type deployment-summary \
+            --status ${{ job.status }} \
+            --environment ${{ needs.prepare.outputs.environment }} \
+            --summary-path ../../deployment-summary.html
+        env:
+          NOTIFICATION_WEBHOOK: ${{ secrets.NOTIFICATION_WEBHOOK }}
