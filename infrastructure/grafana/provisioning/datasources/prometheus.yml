@@ -1,0 +1,41 @@
+apiVersion: 1
+
+# List of data sources to be configured in Grafana
+datasources:
+  # Prometheus data source configuration for Payment API Security Enhancement project
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    version: 1
+    editable: false
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST
+      queryTimeout: 60s
+      manageAlerts: true
+      alertmanagerUid: alertmanager
+    secureJsonData: {}
+    uid: prometheus
+
+  # Alertmanager data source for alert management
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    isDefault: false
+    version: 1
+    editable: false
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: true
+    secureJsonData: {}
+    uid: alertmanager
+
+# Delete existing data sources with the same name before creating new ones
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+  - name: Alertmanager
+    orgId: 1
