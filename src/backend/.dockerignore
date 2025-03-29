@@ -1,0 +1,49 @@
+**/.git
+**/.gitignore
+**/.github
+
+# Build output directories
+**/target
+**/build
+**/node_modules
+
+# Documentation files
+**/*.md
+**/*.log
+**/README*
+**/LICENSE*
+
+# Docker files (to prevent recursive inclusion)
+**/docker-compose*.yml
+**/Dockerfile*
+**/.dockerignore
+
+# Project directories not needed for runtime
+**/docs
+**/infrastructure
+**/kubernetes
+**/terraform
+**/scripts
+
+# Test files to reduce image size
+**/src/test
+**/src/*/src/test
+
+# IDE-specific files
+**/.settings
+**/.classpath
+**/.project
+**/.idea
+**/*.iml
+**/.vscode
+
+# Sensitive files and directories
+**/secrets
+**/*.pem
+**/*.key
+**/application-*.yml
+**/application-*.properties
+
+# Code quality configuration
+**/checkstyle.xml
+**/lombok.config
