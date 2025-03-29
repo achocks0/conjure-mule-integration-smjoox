@@ -1,0 +1,110 @@
+# Test configuration for Payment-SAPI service
+# Overrides default settings in application.yml with test-specific configurations
+
+spring:
+  # Use in-memory H2 database for testing
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ''
+    driver-class-name: org.h2.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      idle-timeout: 60000
+      max-lifetime: 300000
+  
+  # JPA configuration for testing
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        show_sql: true
+        format_sql: true
+  
+  # Embedded Redis configuration for testing
+  redis:
+    host: localhost
+    port: 6370  # Different port to avoid conflicts with real Redis
+    password: ''
+    ssl: false
+    database: 1
+    lettuce:
+      pool:
+        min-idle: 1
+        max-idle: 5
+        max-active: 10
+  
+  # Disable Flyway migrations for testing
+  flyway:
+    enabled: false
+  
+  # Cache configuration
+  cache:
+    type: redis
+    redis:
+      time-to-live: 300000  # 5 minutes in milliseconds for faster testing
+    cache-names: tokens
+
+# Server configuration for testing
+server:
+  port: 0  # Random port to avoid conflicts
+  servlet:
+    context-path: /internal/v1
+  tomcat:
+    threads:
+      max: 10  # Reduced for testing
+    max-connections: 100  # Reduced for testing
+
+# Token validation configuration for testing
+token:
+  audience: payment-sapi-test
+  issuers: payment-eapi-test
+  verification-key-path: classpath:test-keys/verification-key.pem
+  renewal-enabled: true
+  renewal-threshold-seconds: 60  # Shorter for testing
+
+# Mock payment backend configuration for testing
+payment:
+  backend:
+    url: http://localhost:8089  # Mock server URL
+    connection-timeout: 1000  # Shorter for testing
+    read-timeout: 2000  # Shorter for testing
+    retry-count: 1  # Reduced for testing
+
+# Logging configuration for testing
+logging:
+  level:
+    root: INFO
+    com.payment.sapi: DEBUG  # More detailed logging for the application package
+    org.springframework: INFO
+    org.hibernate: INFO
+
+# Circuit breaker configuration for testing
+circuit-breaker:
+  redis:
+    failure-threshold: 50
+    wait-duration-in-open-state: 5000  # Shorter for testing
+    permitted-number-of-calls-in-half-open-state: 5  # Reduced for testing
+  payment-backend:
+    failure-threshold: 50
+    wait-duration-in-open-state: 5000  # Shorter for testing
+    permitted-number-of-calls-in-half-open-state: 5  # Reduced for testing
+
+# Monitoring endpoints configuration for testing
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+
+# Disable rate limiting for testing
+security:
+  rate-limiting:
+    enabled: false
