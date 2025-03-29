@@ -1,0 +1,163 @@
+---
+# Policy for Payment-EAPI service credential storage and authentication in Conjur vault
+- !policy
+  id: payment-eapi
+  body:
+    # Define the Payment-EAPI service identity
+    - !layer
+      id: eapi-service
+      annotations:
+        description: Layer for Payment-EAPI service authentication
+    
+    # Define the host identity for the Payment-EAPI service
+    - !host
+      id: payment-eapi-service
+      annotations:
+        description: Host identity for Payment-EAPI service
+    
+    # Add the Payment-EAPI service host to the service layer
+    - !grant
+      role: !layer eapi-service
+      member: !host payment-eapi-service
+    
+    # Define the credential storage structure
+    - !policy
+      id: credentials
+      body:
+        # Variable for storing client credentials
+        - !variable
+          id: client-credentials
+          annotations:
+            description: Storage for client ID and secret credentials
+        
+        # Variable for storing credential rotation state
+        - !variable
+          id: rotation-state
+          annotations:
+            description: Storage for credential rotation state information
+    
+    # Grant read permissions to the Payment-EAPI service for client credentials
+    - !permit
+      role: !layer eapi-service
+      privilege: [ read, execute ]
+      resource: !variable credentials/client-credentials
+    
+    # Grant read permissions to the Payment-EAPI service for rotation state
+    - !permit
+      role: !layer eapi-service
+      privilege: [ read, execute ]
+      resource: !variable credentials/rotation-state
+    
+    # Define authentication webservice for certificate-based authentication
+    - !webservice
+      id: eapi-auth
+      annotations:
+        description: Authentication service for Payment-EAPI
+    
+    # Grant authentication permissions to the Payment-EAPI service
+    - !permit
+      role: !layer eapi-service
+      privilege: [ authenticate ]
+      resource: !webservice eapi-auth
+    
+    # Define token generation structure
+    - !policy
+      id: tokens
+      body:
+        # Variable for storing token signing key
+        - !variable
+          id: signing-key
+          annotations:
+            description: Private key for signing JWT tokens
+        
+        # Variable for storing token generation configuration
+        - !variable
+          id: token-config
+          annotations:
+            description: Configuration for token generation including issuer and expiration
+        
+        # Variable for storing token validation configuration
+        - !variable
+          id: validation-config
+          annotations:
+            description: Configuration for token validation including accepted issuers and audiences
+        
+        # Variable for storing verification key
+        - !variable
+          id: verification-key
+          annotations:
+            description: Public key for verifying JWT tokens
+    
+    # Grant read permissions to the Payment-EAPI service for token signing key
+    - !permit
+      role: !layer eapi-service
+      privilege: [ read, execute ]
+      resource: !variable tokens/signing-key
+    
+    # Grant read permissions to the Payment-EAPI service for token configuration
+    - !permit
+      role: !layer eapi-service
+      privilege: [ read, execute ]
+      resource: !variable tokens/token-config
+    
+    # Grant read permissions to the Payment-EAPI service for token validation configuration
+    - !permit
+      role: !layer eapi-service
+      privilege: [ read, execute ]
+      resource: !variable tokens/validation-config
+    
+    # Grant read permissions to the Payment-EAPI service for verification key
+    - !permit
+      role: !layer eapi-service
+      privilege: [ read, execute ]
+      resource: !variable tokens/verification-key
+    
+    # Define a group for rotation service access
+    - !group
+      id: rotation-access
+      annotations:
+        description: Group for rotation service identities to manage credentials and rotation state
+    
+    # Define integration with rotation service
+    - !policy
+      id: rotation-integration
+      body:
+        # Grant permissions to rotation access group for client credential management
+        - !permit
+          role: !group rotation-access
+          privilege: [ read, execute, update ]
+          resource: !variable credentials/client-credentials
+        
+        # Grant permissions to rotation access group for rotation state management
+        - !permit
+          role: !group rotation-access
+          privilege: [ read, execute, update ]
+          resource: !variable credentials/rotation-state
+        
+        # Grant permissions to rotation access group for token signing key management
+        - !permit
+          role: !group rotation-access
+          privilege: [ read, execute, update ]
+          resource: !variable tokens/signing-key
+        
+        # Grant permissions to rotation access group for verification key management
+        - !permit
+          role: !group rotation-access
+          privilege: [ read, execute, update ]
+          resource: !variable tokens/verification-key
+    
+    # Define a group for monitoring service access
+    - !group
+      id: monitoring-access
+      annotations:
+        description: Group for monitoring service identities to access credential metadata
+    
+    # Define integration with monitoring service
+    - !policy
+      id: monitoring-integration
+      body:
+        # Grant read permissions to monitoring access group for credential metadata
+        - !permit
+          role: !group monitoring-access
+          privilege: [ read ]
+          resource: !variable credentials/rotation-state
