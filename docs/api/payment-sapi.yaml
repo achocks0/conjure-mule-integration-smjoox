@@ -1,0 +1,537 @@
+openapi: 3.0.0
+info:
+  title: Payment System API
+  description: Internal API for processing payments with token-based authentication, part of the Payment API Security Enhancement project.
+  version: 1.0.0
+  contact:
+    name: Payment API Support
+    email: api-support@example.com
+
+servers:
+  - url: https://payment-sapi.example.com/internal/v1
+    description: Production server
+  - url: https://staging-payment-sapi.example.com/internal/v1
+    description: Staging server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /payments:
+    post:
+      summary: Process payment
+      description: Processes a payment transaction with token-based authentication.
+      operationId: processPayment
+      tags:
+        - Payments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+            format: Bearer {token}
+          description: JWT token for authentication
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Correlation ID for request tracking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '200':
+          description: Successful payment processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      summary: Get payments by client
+      description: Retrieves all payments for the authenticated client.
+      operationId: getPaymentsByClient
+      tags:
+        - Payments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+            format: Bearer {token}
+          description: JWT token for authentication
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Correlation ID for request tracking
+      responses:
+        '200':
+          description: List of payments retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentResponse'
+        '401':
+          description: Unauthorized - invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /payments/{paymentId}:
+    get:
+      summary: Get payment status
+      description: Retrieves the status of a payment by ID.
+      operationId: getPaymentStatus
+      tags:
+        - Payments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Payment ID to retrieve
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+            format: Bearer {token}
+          description: JWT token for authentication
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Correlation ID for request tracking
+      responses:
+        '200':
+          description: Payment information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '401':
+          description: Unauthorized - invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Payment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /payments/reference/{reference}:
+    get:
+      summary: Get payment by reference
+      description: Retrieves a payment by its reference for the authenticated client.
+      operationId: getPaymentByReference
+      tags:
+        - Payments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Payment reference to retrieve
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+            format: Bearer {token}
+          description: JWT token for authentication
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Correlation ID for request tracking
+      responses:
+        '200':
+          description: Payment information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '401':
+          description: Unauthorized - invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Payment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /tokens/validate:
+    post:
+      summary: Validate token
+      description: Validates a JWT token and checks if it has the required permission.
+      operationId: validateToken
+      tags:
+        - Tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tokenString
+                - requiredPermission
+              properties:
+                tokenString:
+                  type: string
+                  description: JWT token to validate
+                requiredPermission:
+                  type: string
+                  description: Permission required for the operation
+      responses:
+        '200':
+          description: Token validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /tokens/renew:
+    post:
+      summary: Renew token
+      description: Renews an expired or about-to-expire JWT token.
+      operationId: renewToken
+      tags:
+        - Tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tokenString
+              properties:
+                tokenString:
+                  type: string
+                  description: JWT token to renew
+      responses:
+        '200':
+          description: Token renewal result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      summary: Basic health check
+      description: Provides a basic health check endpoint that returns the status of the service.
+      operationId: checkHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: payment-sapi
+                  status:
+                    type: string
+                    enum: [UP, DOWN]
+                    example: UP
+
+  /health/detailed:
+    get:
+      summary: Detailed health check
+      description: Provides a detailed health check endpoint that includes the status of dependencies.
+      operationId: checkDetailedHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Detailed health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: payment-sapi
+                  status:
+                    type: string
+                    enum: [UP, DOWN, DEGRADED]
+                    example: UP
+                  redis:
+                    type: string
+                    enum: [UP, DOWN]
+                    example: UP
+                  database:
+                    type: string
+                    enum: [UP, DOWN]
+                    example: UP
+                  tokenValidation:
+                    type: string
+                    enum: [UP, DOWN]
+                    example: UP
+
+  /health/liveness:
+    get:
+      summary: Liveness check
+      description: Provides a lightweight liveness check endpoint for Kubernetes health probes.
+      operationId: checkLiveness
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is alive
+
+  /health/readiness:
+    get:
+      summary: Readiness check
+      description: Provides a readiness check endpoint for Kubernetes health probes that verifies the service is ready to accept traffic.
+      operationId: checkReadiness
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is ready to accept traffic
+        '503':
+          description: Service is not ready to accept traffic
+
+components:
+  schemas:
+    PaymentRequest:
+      type: object
+      required:
+        - amount
+        - currency
+        - reference
+      properties:
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Payment amount
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          pattern: '^[A-Z]{3}$'
+          description: Payment currency code (ISO 4217)
+          example: USD
+        reference:
+          type: string
+          maxLength: 50
+          description: Payment reference
+        description:
+          type: string
+          maxLength: 255
+          description: Payment description
+
+    PaymentResponse:
+      type: object
+      properties:
+        payment_id:
+          type: string
+          description: Unique payment identifier
+        status:
+          type: string
+          description: Payment status
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED]
+        amount:
+          type: number
+          format: decimal
+          description: Payment amount
+        currency:
+          type: string
+          description: Payment currency code (ISO 4217)
+          example: USD
+        reference:
+          type: string
+          description: Payment reference
+        description:
+          type: string
+          description: Payment description
+        created_at:
+          type: string
+          format: date-time
+          description: Payment creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Payment last update timestamp
+
+    ValidationResult:
+      type: object
+      properties:
+        isValid:
+          type: boolean
+          description: Indicates if the token is valid
+        isExpired:
+          type: boolean
+          description: Indicates if the token is expired
+        isForbidden:
+          type: boolean
+          description: Indicates if the token lacks required permissions
+        isRenewed:
+          type: boolean
+          description: Indicates if the token was renewed
+        errorMessage:
+          type: string
+          description: Error message if validation failed
+        renewedTokenString:
+          type: string
+          description: New token string if token was renewed
+
+    ErrorResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+          description: Error code identifying the type of error
+        message:
+          type: string
+          description: Human-readable error message
+        requestId:
+          type: string
+          description: Unique identifier for the request
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp when the error occurred
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for authentication
+
+tags:
+  - name: Payments
+    description: Payment processing operations
+  - name: Tokens
+    description: Token validation and renewal operations
+  - name: Health
+    description: Health check operations
