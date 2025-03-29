@@ -1,0 +1,197 @@
+spring:
+  profiles: prod
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:payment-db}:${DB_PORT:5432}/${DB_NAME:payment_monitoring}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  redis:
+    host: ${REDIS_HOST:redis-cache}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD}
+    ssl: true
+    timeout: 2000
+    lettuce:
+      pool:
+        max-active: 20
+        max-idle: 10
+        min-idle: 5
+        max-wait: -1
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
+server:
+  port: ${SERVER_PORT:8084}
+  tomcat:
+    max-threads: 200
+    min-spare-threads: 20
+    max-connections: 10000
+    connection-timeout: 20000
+  ssl:
+    enabled: true
+    key-store: ${SSL_KEYSTORE_PATH}
+    key-store-password: ${SSL_KEYSTORE_PASSWORD}
+    key-store-type: PKCS12
+    key-alias: payment-monitoring
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      roles: MONITORING_ADMIN
+    metrics:
+      enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: [0.5, 0.9, 0.95, 0.99]
+    tags:
+      application: ${spring.application.name}
+      environment: production
+
+monitoring:
+  enabled: true
+  metrics-retention-days: 90
+  connection-timeout: 5000
+  read-timeout: 10000
+  scheduled-checks:
+    enabled: true
+    cron: 0 */5 * * * *
+  notification-channels:
+    pagerduty:
+      enabled: ${PAGERDUTY_ENABLED:true}
+      severity-levels:
+        - CRITICAL
+        - HIGH
+      service-key: ${PAGERDUTY_SERVICE_KEY}
+      response-times:
+        security: 15m
+        performance: 30m
+        availability: 15m
+    email:
+      enabled: ${EMAIL_ENABLED:true}
+      severity-levels:
+        - CRITICAL
+        - HIGH
+        - MEDIUM
+      recipients:
+        - ${SECURITY_TEAM_EMAIL:security-team@example.com}
+        - ${OPERATIONS_TEAM_EMAIL:operations-team@example.com}
+      response-times:
+        security:
+          critical: 15m
+          high: 1h
+          medium: 4h
+        performance:
+          critical: 30m
+          high: 2h
+          medium: 8h
+        availability:
+          critical: 15m
+          high: 1h
+          medium: 4h
+    slack:
+      enabled: ${SLACK_ENABLED:true}
+      severity-levels:
+        - CRITICAL
+        - HIGH
+        - MEDIUM
+        - LOW
+      webhook-url: ${SLACK_WEBHOOK_URL}
+      channels:
+        security: '#security-alerts'
+        performance: '#performance-alerts'
+        availability: '#availability-alerts'
+  services:
+    payment-eapi:
+      url: ${PAYMENT_EAPI_URL:https://payment-eapi:8080}
+      health-check-path: /actuator/health
+      metrics-path: /actuator/prometheus
+    payment-sapi:
+      url: ${PAYMENT_SAPI_URL:https://payment-sapi:8081}
+      health-check-path: /actuator/health
+      metrics-path: /actuator/prometheus
+    conjur-vault:
+      url: ${CONJUR_VAULT_URL:https://conjur-vault:8082}
+      health-check-path: /health
+      metrics-path: /metrics
+    redis-cache:
+      host: ${REDIS_HOST:redis-cache}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+  alert-thresholds:
+    security:
+      auth-failure-warning-threshold: 0.05
+      auth-failure-critical-threshold: 0.1
+      unauthorized-attempts-warning-threshold: 5
+      unauthorized-attempts-critical-threshold: 10
+      token-validation-failure-warning-threshold: 0.05
+      token-validation-failure-critical-threshold: 0.1
+      credential-access-anomaly-warning-threshold: 2.0
+      credential-access-anomaly-critical-threshold: 3.0
+    performance:
+      api-response-time-warning-threshold: 300
+      api-response-time-critical-threshold: 500
+      authentication-time-warning-threshold: 200
+      authentication-time-critical-threshold: 400
+      token-generation-time-warning-threshold: 100
+      token-generation-time-critical-threshold: 200
+      conjur-vault-response-time-warning-threshold: 150
+      conjur-vault-response-time-critical-threshold: 300
+    availability:
+      api-availability-warning-threshold: 0.995
+      api-availability-critical-threshold: 0.99
+      conjur-vault-availability-warning-threshold: 0.999
+      conjur-vault-availability-critical-threshold: 0.995
+      redis-cache-availability-warning-threshold: 0.999
+      redis-cache-availability-critical-threshold: 0.995
+      database-availability-warning-threshold: 0.999
+      database-availability-critical-threshold: 0.995
+
+logging:
+  level:
+    root: WARN
+    com.payment: INFO
+    org.springframework: WARN
+    com.payment.monitoring: INFO
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
+    file: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{traceId}/%X{spanId}] [%thread] %-5level %logger{36} - %msg%n'
+  file:
+    name: ${LOG_FILE:/var/log/payment/monitoring-service.log}
+    max-size: 100MB
+    max-history: 30
