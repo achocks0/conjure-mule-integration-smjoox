@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" scanPeriod="30 seconds">
+    <!-- Properties -->
+    <property name="LOG_PATH" value="${LOG_PATH:-/var/log/payment-eapi}" />
+    <property name="LOG_ARCHIVE" value="${LOG_ARCHIVE:-/var/log/payment-eapi/archive}" />
+    <property name="LOG_LEVEL" value="${LOG_LEVEL:-INFO}" />
+
+    <!-- Sensitive Data Masking Converter -->
+    <conversionRule conversionWord="maskedMsg" 
+                   converterClass="com.payment.eapi.logging.SensitiveDataMaskingConverter" />
+
+    <!-- Appenders -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %maskedMsg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/application.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %maskedMsg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_ARCHIVE}/application.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>false</includeCallerData>
+        <appender-ref ref="FILE" />
+    </appender>
+
+    <appender name="JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/application.json</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdc>true</includeMdc>
+            <includeContext>true</includeContext>
+            <customFields>{"application":"payment-eapi","environment":"${SPRING_PROFILES_ACTIVE:-dev}"}</customFields>
+            <!-- Add json providers to mask sensitive data -->
+            <provider class="com.payment.eapi.logging.SensitiveDataJsonProvider" />
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_ARCHIVE}/application.%d{yyyy-MM-dd}.json</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="SECURITY" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/security.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %maskedMsg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_ARCHIVE}/security.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>90</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Loggers -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+    </root>
+
+    <logger name="com.payment.eapi" level="${LOG_LEVEL}" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+    </logger>
+
+    <!-- Security loggers -->
+    <logger name="com.payment.eapi.service.AuthenticationService" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+        <appender-ref ref="SECURITY" />
+    </logger>
+
+    <logger name="com.payment.eapi.service.ConjurService" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+        <appender-ref ref="SECURITY" />
+    </logger>
+
+    <logger name="com.payment.eapi.service.TokenService" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+        <appender-ref ref="SECURITY" />
+    </logger>
+
+    <logger name="com.payment.eapi.filter.ClientCredentialsAuthenticationFilter" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+        <appender-ref ref="SECURITY" />
+    </logger>
+
+    <!-- Framework loggers -->
+    <logger name="org.springframework" level="WARN" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+    </logger>
+
+    <logger name="org.hibernate" level="WARN" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="ASYNC" />
+        <appender-ref ref="JSON" />
+    </logger>
+
+    <!-- Profile-specific configurations -->
+    <springProfile name="dev">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </root>
+        <logger name="com.payment.eapi" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </logger>
+        <logger name="org.springframework.security" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </logger>
+    </springProfile>
+
+    <springProfile name="test">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </root>
+        <logger name="com.payment.eapi" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="FILE" />
+        </logger>
+    </springProfile>
+
+    <springProfile name="staging">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </root>
+        <logger name="com.payment.eapi" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+        <logger name="org.springframework" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+        <logger name="org.hibernate" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+    </springProfile>
+
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </root>
+        <logger name="com.payment.eapi" level="INFO" additivity="false">
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+        <logger name="org.springframework" level="WARN" additivity="false">
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+        <logger name="org.hibernate" level="WARN" additivity="false">
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+    </springProfile>
+</configuration>
