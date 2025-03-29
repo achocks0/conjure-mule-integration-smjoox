@@ -1,0 +1,166 @@
+---
+# Policy for credential rotation service in Conjur vault
+- !policy
+  id: rotation-service
+  body:
+    # Define the rotation service identity
+    - !layer
+      id: rotation-service-layer
+      annotations:
+        description: Layer for credential rotation service authentication
+
+    # Define the host identity for the rotation service
+    - !host
+      id: rotation-service-host
+      annotations:
+        description: Host identity for credential rotation service
+
+    # Add the rotation service host to the service layer
+    - !grant
+      role: !layer rotation-service-layer
+      member: !host rotation-service-host
+
+    # Define authentication webservice for certificate-based authentication
+    - !webservice
+      id: rotation-auth
+      annotations:
+        description: Authentication service for credential rotation
+
+    # Grant authentication permissions to the rotation service
+    - !permit
+      role: !layer rotation-service-layer
+      privilege: [ authenticate ]
+      resource: !webservice rotation-auth
+
+    # Define credential versions policy
+    - !policy
+      id: credential-versions
+      body:
+        # Variable for storing credential version metadata
+        - !variable
+          id: version-metadata
+          annotations:
+            description: Metadata for credential versions including status and creation time
+
+        # Variable for storing active versions
+        - !variable
+          id: active-versions
+          annotations:
+            description: List of currently active credential versions
+
+        # Variable for storing credential generation configuration
+        - !variable
+          id: generation-config
+          annotations:
+            description: Configuration for credential generation including complexity requirements
+
+    # Define rotation state policy
+    - !policy
+      id: rotation-state
+      body:
+        # Variable for storing rotation records
+        - !variable
+          id: rotation-records
+          annotations:
+            description: Records of rotation processes including state and timestamps
+
+        # Variable for storing transition configurations
+        - !variable
+          id: transition-config
+          annotations:
+            description: Configuration for credential transition periods
+
+        # Variable for storing rotation statistics
+        - !variable
+          id: rotation-stats
+          annotations:
+            description: Statistics for rotation operations
+
+    # Grant permissions to rotation service for credential version management
+    - !permit
+      role: !layer rotation-service-layer
+      privilege: [ read, execute, update ]
+      resource: !variable credential-versions/*
+
+    # Grant permissions to rotation service for rotation state management
+    - !permit
+      role: !layer rotation-service-layer
+      privilege: [ read, execute, update ]
+      resource: !variable rotation-state/*
+
+    # Add rotation service to EAPI rotation access group
+    - !grant
+      role: !group @eapi-policy/rotation-access
+      member: !layer rotation-service-layer
+
+    # Define integration with monitoring service
+    - !policy
+      id: monitoring-integration
+      body:
+        # Define a group for monitoring service access
+        - !group
+          id: monitoring-access
+          annotations:
+            description: Group for monitoring service identities to access rotation statistics
+
+        # Grant read permissions to monitoring access group for rotation statistics
+        - !permit
+          role: !group monitoring-access
+          privilege: [ read ]
+          resource: !variable rotation-state/rotation-stats
+
+        # Grant read permissions to monitoring access group for version metadata
+        - !permit
+          role: !group monitoring-access
+          privilege: [ read ]
+          resource: !variable credential-versions/version-metadata
+
+    # Define admin access policy
+    - !policy
+      id: admin-access
+      body:
+        # Define a group for administrative access
+        - !group
+          id: rotation-admins
+          annotations:
+            description: Group for administrators who can manage rotation processes
+
+        # Grant full permissions to admin group for credential version management
+        - !permit
+          role: !group rotation-admins
+          privilege: [ read, execute, update ]
+          resource: !variable credential-versions/*
+
+        # Grant full permissions to admin group for rotation state management
+        - !permit
+          role: !group rotation-admins
+          privilege: [ read, execute, update ]
+          resource: !variable rotation-state/*
+
+        # Grant permissions to admin group to manage rotation service
+        - !permit
+          role: !group rotation-admins
+          privilege: [ read, update ]
+          resource: !layer rotation-service-layer
+
+    # Define scheduled rotation policy
+    - !policy
+      id: scheduled-rotation
+      body:
+        # Variable for storing rotation schedules
+        - !variable
+          id: rotation-schedules
+          annotations:
+            description: Schedules for automatic credential rotation
+
+        # Variable for storing rotation policies
+        - !variable
+          id: rotation-policies
+          annotations:
+            description: Policies defining rotation requirements and constraints
+
+        # Grant permissions to rotation service for schedule management
+        - !permit
+          role: !layer rotation-service-layer
+          privilege: [ read, execute, update ]
+          resource: !variable scheduled-rotation/*
