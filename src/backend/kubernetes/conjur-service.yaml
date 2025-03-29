@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: conjur
+  namespace: payment-system
+  labels:
+    app: conjur
+    component: vault
+    tier: security
+    part-of: payment-system
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "9090"
+spec:
+  selector:
+    app: conjur
+  ports:
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
