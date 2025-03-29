@@ -1,0 +1,387 @@
+groups:
+  - name: security_alerts
+    rules:
+      - alert: AuthenticationFailureRateHigh
+        expr: rate(payment_authentication_failures_total[5m]) / rate(payment_authentication_attempts_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: Authentication failure rate is high
+          description: Authentication failure rate is above 5% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: AuthenticationFailureRateCritical
+        expr: rate(payment_authentication_failures_total[5m]) / rate(payment_authentication_attempts_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: Authentication failure rate is critical
+          description: Authentication failure rate is above 10% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: AuthenticationFailureSpike
+        expr: increase(payment_authentication_failures_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: Authentication failure spike detected
+          description: More than 10 authentication failures in the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: AuthenticationFailureCriticalSpike
+        expr: increase(payment_authentication_failures_total[5m]) > 20
+        for: 5m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: Critical authentication failure spike detected
+          description: More than 20 authentication failures in the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: UnauthorizedAccessAttempts
+        expr: increase(payment_unauthorized_access_attempts_total[15m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: Unauthorized access attempts detected
+          description: More than 5 unauthorized access attempts in the last 15 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: UnauthorizedAccessAttemptsHigh
+        expr: increase(payment_unauthorized_access_attempts_total[15m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: High number of unauthorized access attempts
+          description: More than 10 unauthorized access attempts in the last 15 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: TokenValidationFailureRateHigh
+        expr: rate(payment_token_validation_failures_total[5m]) / rate(payment_token_validation_attempts_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: Token validation failure rate is high
+          description: Token validation failure rate is above 5% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: TokenValidationFailureRateCritical
+        expr: rate(payment_token_validation_failures_total[5m]) / rate(payment_token_validation_attempts_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: Token validation failure rate is critical
+          description: Token validation failure rate is above 10% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: CredentialAccessAnomaly
+        expr: rate(payment_credential_access_total[15m]) > 2 * avg_over_time(rate(payment_credential_access_total[1h])[1d:1h])
+        for: 15m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: Credential access anomaly detected
+          description: Credential access rate is more than 2x the normal rate over the last 15 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: CredentialAccessAnomalyCritical
+        expr: rate(payment_credential_access_total[15m]) > 3 * avg_over_time(rate(payment_credential_access_total[1h])[1d:1h])
+        for: 15m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: Critical credential access anomaly detected
+          description: Credential access rate is more than 3x the normal rate over the last 15 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: CredentialRotationFailure
+        expr: increase(payment_credential_rotation_total{status="failed"}[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: Credential rotation failure detected
+          description: One or more credential rotation operations have failed in the last hour
+          dashboard: https://grafana.example.com/d/security-dashboard
+          runbook: https://example.com/runbooks/credential-rotation-failure
+
+  - name: performance_alerts
+    rules:
+      - alert: APIResponseTimeHigh
+        expr: histogram_quantile(0.95, sum(rate(payment_api_response_time_seconds_bucket[5m])) by (le)) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: API response time is high
+          description: 95th percentile of API response time is above 300ms for the last 5 minutes
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+      - alert: APIResponseTimeCritical
+        expr: histogram_quantile(0.95, sum(rate(payment_api_response_time_seconds_bucket[5m])) by (le)) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: API response time is critical
+          description: 95th percentile of API response time is above 500ms for the last 5 minutes
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+      - alert: AuthenticationTimeHigh
+        expr: histogram_quantile(0.95, sum(rate(payment_authentication_time_seconds_bucket[5m])) by (le)) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: Authentication time is high
+          description: 95th percentile of authentication time is above 200ms for the last 5 minutes
+          dashboard: https://grafana.example.com/d/authentication-dashboard
+
+      - alert: AuthenticationTimeCritical
+        expr: histogram_quantile(0.95, sum(rate(payment_authentication_time_seconds_bucket[5m])) by (le)) > 0.4
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: Authentication time is critical
+          description: 95th percentile of authentication time is above 400ms for the last 5 minutes
+          dashboard: https://grafana.example.com/d/authentication-dashboard
+
+      - alert: TokenGenerationTimeHigh
+        expr: histogram_quantile(0.95, sum(rate(payment_token_generation_time_seconds_bucket[5m])) by (le)) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: Token generation time is high
+          description: 95th percentile of token generation time is above 100ms for the last 5 minutes
+          dashboard: https://grafana.example.com/d/authentication-dashboard
+
+      - alert: TokenGenerationTimeCritical
+        expr: histogram_quantile(0.95, sum(rate(payment_token_generation_time_seconds_bucket[5m])) by (le)) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: Token generation time is critical
+          description: 95th percentile of token generation time is above 200ms for the last 5 minutes
+          dashboard: https://grafana.example.com/d/authentication-dashboard
+
+      - alert: ConjurResponseTimeHigh
+        expr: histogram_quantile(0.95, sum(rate(payment_conjur_response_time_seconds_bucket[5m])) by (le)) > 0.15
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: Conjur vault response time is high
+          description: 95th percentile of Conjur vault response time is above 150ms for the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: ConjurResponseTimeCritical
+        expr: histogram_quantile(0.95, sum(rate(payment_conjur_response_time_seconds_bucket[5m])) by (le)) > 0.3
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: Conjur vault response time is critical
+          description: 95th percentile of Conjur vault response time is above 300ms for the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: HighCPUUsage
+        expr: avg by(instance) (rate(process_cpu_seconds_total[5m]) * 100) > 70
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: High CPU usage detected
+          description: CPU usage is above 70% for the last 5 minutes on {{ $labels.instance }}
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+      - alert: CriticalCPUUsage
+        expr: avg by(instance) (rate(process_cpu_seconds_total[5m]) * 100) > 85
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: Critical CPU usage detected
+          description: CPU usage is above 85% for the last 5 minutes on {{ $labels.instance }}
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / process_virtual_memory_bytes * 100 > 70
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: High memory usage detected
+          description: Memory usage is above 70% for the last 5 minutes on {{ $labels.instance }}
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+      - alert: CriticalMemoryUsage
+        expr: process_resident_memory_bytes / process_virtual_memory_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: Critical memory usage detected
+          description: Memory usage is above 85% for the last 5 minutes on {{ $labels.instance }}
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+  - name: availability_alerts
+    rules:
+      - alert: APIAvailabilityLow
+        expr: avg_over_time(up{job=~"payment-eapi|payment-sapi"}[5m]) < 0.995
+        for: 5m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: API availability is below threshold
+          description: API availability is below 99.5% for the last 5 minutes for {{ $labels.job }}
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+      - alert: APIAvailabilityCritical
+        expr: avg_over_time(up{job=~"payment-eapi|payment-sapi"}[5m]) < 0.99
+        for: 5m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: API availability is critically low
+          description: API availability is below 99% for the last 5 minutes for {{ $labels.job }}
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+          runbook: https://example.com/runbooks/api-availability
+
+      - alert: ConjurVaultAvailabilityLow
+        expr: avg_over_time(up{job="conjur-vault"}[5m]) < 0.999
+        for: 5m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: Conjur vault availability is below threshold
+          description: Conjur vault availability is below 99.9% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+
+      - alert: ConjurVaultAvailabilityCritical
+        expr: avg_over_time(up{job="conjur-vault"}[5m]) < 0.995
+        for: 5m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: Conjur vault availability is critically low
+          description: Conjur vault availability is below 99.5% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/security-dashboard
+          runbook: https://example.com/runbooks/conjur-vault-availability
+
+      - alert: RedisCacheAvailabilityLow
+        expr: avg_over_time(up{job="redis-cache"}[5m]) < 0.999
+        for: 5m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: Redis cache availability is below threshold
+          description: Redis cache availability is below 99.9% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+      - alert: RedisCacheAvailabilityCritical
+        expr: avg_over_time(up{job="redis-cache"}[5m]) < 0.995
+        for: 5m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: Redis cache availability is critically low
+          description: Redis cache availability is below 99.5% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+          runbook: https://example.com/runbooks/redis-cache-availability
+
+      - alert: DatabaseAvailabilityLow
+        expr: avg_over_time(up{job="postgresql"}[5m]) < 0.999
+        for: 5m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: Database availability is below threshold
+          description: Database availability is below 99.9% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+      - alert: DatabaseAvailabilityCritical
+        expr: avg_over_time(up{job="postgresql"}[5m]) < 0.995
+        for: 5m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: Database availability is critically low
+          description: Database availability is below 99.5% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+          runbook: https://example.com/runbooks/database-availability
+
+      - alert: InstanceDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: Instance {{ $labels.instance }} is down
+          description: {{ $labels.job }} instance {{ $labels.instance }} has been down for more than 5 minutes
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+          runbook: https://example.com/runbooks/instance-down
+
+      - alert: HighErrorRate
+        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: High HTTP error rate detected
+          description: HTTP error rate is above 1% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+
+      - alert: CriticalErrorRate
+        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: Critical HTTP error rate detected
+          description: HTTP error rate is above 5% for the last 5 minutes
+          dashboard: https://grafana.example.com/d/service-health-dashboard
+          runbook: https://example.com/runbooks/high-error-rate
