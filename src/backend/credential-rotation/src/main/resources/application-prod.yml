@@ -1,0 +1,78 @@
+spring:
+  profiles:
+    active: prod
+  datasource:
+    url: jdbc:postgresql://postgres-rotation:5432/rotation
+    username: ${ROTATION_DB_USERNAME}
+    password: ${ROTATION_DB_PASSWORD}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      connection-timeout: 20000
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  redis:
+    host: redis-cache
+    port: 6379
+    password: ${REDIS_PASSWORD}
+    ssl: true
+    timeout: 2000
+    database: 0
+
+conjur:
+  url: https://conjur.payment-system.com
+  account: payment-system
+  authn-login: rotation-service
+  ssl-certificate: /etc/conjur/conjur-cert.pem
+  connection-timeout: 5000
+  read-timeout: 3000
+  retry-count: 3
+  retry-backoff-multiplier: 1.5
+
+rotation:
+  default-transition-period-minutes: 60
+  monitoring-interval-seconds: 30
+  max-retry-attempts: 3
+  auto-rotation-enabled: true
+  auto-rotation-cron: '0 0 2 * * ?'
+  notification-endpoint: https://payment-eapi.payment-system.com/api/notifications
+  credential-rotation-threshold-days: 90
+  excluded-clients: system-client,admin-client,monitoring-client
+
+logging:
+  level:
+    root: WARN
+    com.payment.rotation: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
+  file:
+    name: /var/log/payment-system/credential-rotation.log
+    max-size: 100MB
+    max-history: 30
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
+    file: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+server:
+  tomcat:
+    threads:
+      max: 200
+    max-connections: 10000
