@@ -1,0 +1,125 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payment_dev
+    username: payment_dev
+    password: payment_dev_password
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 300000
+      max-lifetime: 600000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        show_sql: true
+        format_sql: true
+  redis:
+    host: localhost
+    port: 6379
+    password: ''
+    ssl: false
+    database: 0
+    lettuce:
+      pool:
+        min-idle: 2
+        max-idle: 10
+        max-active: 20
+        time-between-eviction-runs: 300000
+  flyway:
+    enabled: true
+    clean-on-validation-error: false
+    clean-disabled: true
+
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 50
+    max-connections: 1000
+
+conjur:
+  url: http://localhost:8080
+  account: payment-system-dev
+  authn-login: payment-eapi-service-dev
+  ssl-certificate: src/main/resources/dev-cert.pem
+  connection-timeout: 5000
+  read-timeout: 3000
+  retry-count: 3
+  retry-backoff-multiplier: 1.5
+
+token:
+  issuer: payment-eapi-dev
+  audience: payment-sapi-dev
+  expiration-seconds: 3600
+  renewal-enabled: true
+  signing-key-path: conjur/path/to/dev-signing-key
+
+payment-sapi:
+  url: http://localhost:8081
+  connection-timeout: 5000
+  read-timeout: 10000
+  retry-count: 2
+
+metrics:
+  enabled: true
+  prefix: payment-dev
+  retention-days: 7
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /management
+
+logging:
+  level:
+    root: INFO
+    com.payment: DEBUG
+    org.springframework: INFO
+    org.hibernate: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+backward-compatibility:
+  enabled: true
+  header-auth:
+    client-id-header: X-Client-ID
+    client-secret-header: X-Client-Secret
+
+credential-rotation:
+  transition-period-seconds: 86400
+  check-interval-seconds: 300
+  monitoring-enabled: true
+
+circuit-breaker:
+  conjur:
+    failure-threshold: 50
+    wait-duration-in-open-state: 30000
+    permitted-number-of-calls-in-half-open-state: 10
+  redis:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+  payment-sapi:
+    failure-threshold: 50
+    wait-duration-in-open-state: 15000
+    permitted-number-of-calls-in-half-open-state: 20
+
+security:
+  rate-limiting:
+    enabled: true
+    limit-per-minute: 300
+    burst-capacity: 500
+  headers:
+    content-security-policy: "default-src 'self'"
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    x-xss-protection: "1; mode=block"
