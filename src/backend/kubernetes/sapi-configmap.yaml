@@ -1,0 +1,238 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-sapi-config
+  namespace: payment-system
+  labels:
+    app: payment-sapi
+    component: api
+    tier: internal
+    part-of: payment-system
+data:
+  application.yml: |
+    spring:
+      application:
+        name: payment-sapi
+      profiles:
+        active: ${SPRING_PROFILES_ACTIVE:prod}
+      redis:
+        host: ${REDIS_HOST:redis}
+        port: ${REDIS_PORT:6379}
+        password: ${REDIS_PASSWORD}
+        ssl: true
+        timeout: 2000
+        database: 0
+        lettuce:
+          pool:
+            min-idle: 10
+            max-idle: 20
+            max-active: 50
+            time-between-eviction-runs: 300000
+
+    server:
+      port: 8081
+      servlet:
+        context-path: /internal/v1
+      tomcat:
+        threads:
+          max: 200
+        max-connections: 10000
+      compression:
+        enabled: true
+        mime-types: application/json,application/xml,text/html,text/xml,text/plain
+        min-response-size: 1024
+
+    token:
+      audience: payment-sapi
+      issuers: payment-eapi
+      verification-key-path: ${TOKEN_VERIFICATION_KEY_PATH}
+      renewal-enabled: true
+      renewal-threshold-seconds: 300
+
+    payment:
+      backend:
+        url: ${PAYMENT_BACKEND_URL:https://payment-backend.example.com}
+        connection-timeout: 5000
+        read-timeout: 15000
+        retry-count: 2
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,info,metrics,prometheus
+          base-path: /actuator
+      endpoint:
+        health:
+          show-details: never
+          show-components: never
+      metrics:
+        export:
+          prometheus:
+            enabled: true
+
+    logging:
+      level:
+        root: INFO
+        com.payment.sapi: ${LOG_LEVEL:INFO}
+        org.springframework: WARN
+        org.hibernate: WARN
+
+    circuit-breaker:
+      redis:
+        failure-threshold: 50
+        wait-duration-in-open-state: 15000
+        permitted-number-of-calls-in-half-open-state: 20
+      payment-backend:
+        failure-threshold: 50
+        wait-duration-in-open-state: 15000
+        permitted-number-of-calls-in-half-open-state: 20
+
+    security:
+      rate-limiting:
+        enabled: true
+        limit-per-minute: 1000
+        burst-capacity: 2000
+      headers:
+        content-security-policy: "default-src 'self'"
+        x-content-type-options: nosniff
+        x-frame-options: DENY
+        x-xss-protection: "1; mode=block"
+        strict-transport-security: "max-age=31536000; includeSubDomains"
+  logback-spring.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <configuration>
+        <property name="LOG_PATH" value="${LOG_PATH:-/var/log/payment-sapi}" />
+        <property name="LOG_ARCHIVE" value="${LOG_ARCHIVE:-/var/log/payment-sapi/archive}" />
+        <property name="LOG_LEVEL" value="${LOG_LEVEL:-INFO}" />
+
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+
+        <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+            <queueSize>512</queueSize>
+            <discardingThreshold>0</discardingThreshold>
+            <includeCallerData>false</includeCallerData>
+            <appender-ref ref="FILE" />
+        </appender>
+
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_PATH}/application.log</file>
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_ARCHIVE}/application.%d{yyyy-MM-dd}.log</fileNamePattern>
+                <maxHistory>30</maxHistory>
+            </rollingPolicy>
+        </appender>
+
+        <appender name="JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_PATH}/application.json</file>
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdc>true</includeMdc>
+                <includeContext>true</includeContext>
+                <customFields>{"application":"payment-sapi","environment":"${SPRING_PROFILES_ACTIVE:-prod}"}</customFields>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_ARCHIVE}/application.%d{yyyy-MM-dd}.json</fileNamePattern>
+                <maxHistory>30</maxHistory>
+            </rollingPolicy>
+        </appender>
+
+        <appender name="SECURITY" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_PATH}/security.log</file>
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_ARCHIVE}/security.%d{yyyy-MM-dd}.log</fileNamePattern>
+                <maxHistory>90</maxHistory>
+            </rollingPolicy>
+        </appender>
+
+        <logger name="com.payment.sapi" level="${LOG_LEVEL}" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+
+        <logger name="com.payment.sapi.service.TokenValidationService" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+            <appender-ref ref="SECURITY" />
+        </logger>
+
+        <logger name="com.payment.sapi.service.TokenRenewalService" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+            <appender-ref ref="SECURITY" />
+        </logger>
+
+        <logger name="com.payment.sapi.service.AuditService" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+            <appender-ref ref="SECURITY" />
+        </logger>
+
+        <logger name="com.payment.sapi.filter.TokenAuthenticationFilter" level="INFO" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+            <appender-ref ref="SECURITY" />
+        </logger>
+
+        <logger name="org.springframework" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+
+        <logger name="org.hibernate" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </logger>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="ASYNC" />
+            <appender-ref ref="JSON" />
+        </root>
+
+        <springProfile name="prod">
+            <root level="INFO">
+                <appender-ref ref="ASYNC" />
+                <appender-ref ref="JSON" />
+            </root>
+        </springProfile>
+    </configuration>
+  feature-flags.properties: |
+    # Feature Flags for Payment-SAPI
+
+    # Authentication Features
+    feature.token-validation.enabled=true
+    feature.token-renewal.enabled=true
+
+    # Security Features
+    feature.rate-limiting.enabled=true
+    feature.circuit-breaker.enabled=true
+
+    # Monitoring Features
+    feature.metrics.enabled=true
+    feature.health-checks.enabled=true
+    feature.audit-logging.enabled=true
+
+    # Performance Features
+    feature.async-logging.enabled=true
+    feature.response-compression.enabled=true
+    feature.connection-pooling.enabled=true
+
+    # Integration Features
+    feature.redis-caching.enabled=true
