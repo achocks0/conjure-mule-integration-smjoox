@@ -1,0 +1,213 @@
+###################### Filebeat Configuration #######################
+
+# ======================= Filebeat global configurations =======================
+filebeat.config:
+  modules:
+    path: ${path.config}/modules.d/*.yml
+    reload.enabled: true
+
+# ======================= Filebeat inputs =======================
+
+filebeat.inputs:
+# Payment-EAPI application logs
+- type: log
+  enabled: true
+  paths:
+    - /var/log/payment-eapi/*.log
+    - /var/log/payment-eapi/*.json
+  exclude_files: ['.gz$']
+  fields:
+    type: payment-eapi
+    component: payment-eapi
+    environment: ${ENVIRONMENT:production}
+  fields_under_root: false
+  json.keys_under_root: true
+  json.add_error_key: true
+  json.message_key: message
+  multiline:
+    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+    negate: true
+    match: after
+  processors:
+    - add_host_metadata:
+        when.not.contains.tags: forwarded
+    - add_cloud_metadata: ~
+    - add_docker_metadata: ~
+    - add_kubernetes_metadata: ~
+
+# Payment-EAPI security logs
+- type: log
+  enabled: true
+  paths:
+    - /var/log/payment-eapi/security.log
+  exclude_files: ['.gz$']
+  fields:
+    type: payment-eapi-security
+    component: payment-eapi
+    environment: ${ENVIRONMENT:production}
+  fields_under_root: false
+  tags: ["security", "authentication"]
+  multiline:
+    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+    negate: true
+    match: after
+
+# Payment-SAPI application logs
+- type: log
+  enabled: true
+  paths:
+    - /var/log/payment-sapi/*.log
+    - /var/log/payment-sapi/*.json
+  exclude_files: ['.gz$']
+  fields:
+    type: payment-sapi
+    component: payment-sapi
+    environment: ${ENVIRONMENT:production}
+  fields_under_root: false
+  json.keys_under_root: true
+  json.add_error_key: true
+  json.message_key: message
+  multiline:
+    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+    negate: true
+    match: after
+
+# Payment-SAPI security logs
+- type: log
+  enabled: true
+  paths:
+    - /var/log/payment-sapi/security.log
+  exclude_files: ['.gz$']
+  fields:
+    type: payment-sapi-security
+    component: payment-sapi
+    environment: ${ENVIRONMENT:production}
+  fields_under_root: false
+  tags: ["security", "token-validation"]
+  multiline:
+    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+    negate: true
+    match: after
+
+# Conjur vault logs
+- type: log
+  enabled: true
+  paths:
+    - /var/log/conjur-vault/*.log
+  exclude_files: ['.gz$']
+  fields:
+    type: conjur-vault
+    component: conjur-vault
+    environment: ${ENVIRONMENT:production}
+  fields_under_root: false
+  tags: ["security", "credential-management"]
+  multiline:
+    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+    negate: true
+    match: after
+
+# Redis cache logs
+- type: log
+  enabled: true
+  paths:
+    - /var/log/redis/*.log
+  exclude_files: ['.gz$']
+  fields:
+    type: redis-cache
+    component: redis-cache
+    environment: ${ENVIRONMENT:production}
+  fields_under_root: false
+  multiline:
+    pattern: '^[0-9]{2}:[0-9]{2}:[0-9]{2}'
+    negate: true
+    match: after
+
+# Docker container logs
+- type: container
+  enabled: true
+  paths:
+    - /var/lib/docker/containers/*/*.log
+  stream: all
+  fields:
+    type: docker-container
+    environment: ${ENVIRONMENT:production}
+  fields_under_root: false
+  json.keys_under_root: true
+  json.add_error_key: true
+  json.message_key: log
+  processors:
+    - add_docker_metadata:
+        host: unix:///var/run/docker.sock
+
+# ======================= Filebeat modules =======================
+filebeat.modules:
+- module: system
+  enabled: true
+  var.paths:
+    - /var/log/syslog*
+    - /var/log/auth.log*
+
+- module: nginx
+  enabled: true
+  var.paths.access:
+    - /var/log/nginx/access.log*
+  var.paths.error:
+    - /var/log/nginx/error.log*
+
+# ======================= Processors =======================
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_cloud_metadata: ~
+  - add_docker_metadata:
+      host: unix:///var/run/docker.sock
+  - add_kubernetes_metadata:
+      host: ${NODE_NAME}
+  # Drop sensitive fields
+  - drop_fields:
+      fields: ["client_secret", "password", "token", "api_key"]
+      ignore_missing: true
+
+# ======================= Output configuration =======================
+output.logstash:
+  hosts: ["${LOGSTASH_HOST:logstash:5044}"]
+  loadbalance: true
+  ssl.enabled: true
+  ssl.certificate_authorities: ["/usr/share/filebeat/certs/ca.crt"]
+  ssl.certificate: "/usr/share/filebeat/certs/client.crt"
+  ssl.key: "/usr/share/filebeat/certs/client.key"
+  ssl.verification_mode: full
+
+# ======================= Filebeat logging configuration =======================
+logging:
+  level: info
+  to_files: true
+  to_syslog: false
+  files:
+    path: /var/log/filebeat
+    name: filebeat.log
+    keepfiles: 7
+    permissions: 0644
+
+# ======================= Monitoring configuration =======================
+monitoring:
+  enabled: true
+  elasticsearch:
+    hosts: ["${ELASTICSEARCH_HOST:elasticsearch:9200}"]
+    username: "${ELASTIC_USER:elastic}"
+    password: "${ELASTIC_PASSWORD}"
+
+# ======================= Setup configuration =======================
+setup:
+  template.enabled: true
+  template.name: "filebeat"
+  template.pattern: "filebeat-*"
+  template.overwrite: true
+  ilm.enabled: true
+  ilm.rollover_alias: "filebeat"
+  ilm.pattern: "{now/d}-000001"
+  ilm.policy_name: "filebeat-policy"
+  kibana:
+    host: "${KIBANA_HOST:kibana:5601}"
+    username: "${ELASTIC_USER:elastic}"
+    password: "${ELASTIC_PASSWORD}"
