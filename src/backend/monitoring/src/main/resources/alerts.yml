@@ -1,0 +1,174 @@
+thresholds:
+  security:
+    authentication_failure:
+      warning:
+        rate: 0.05
+        count: 10
+        duration_minutes: 5
+      critical:
+        rate: 0.1
+        count: 20
+        duration_minutes: 5
+    unauthorized_access:
+      warning:
+        count: 5
+        duration_minutes: 15
+      critical:
+        count: 10
+        duration_minutes: 15
+    token_validation_failure:
+      warning:
+        rate: 0.05
+        duration_minutes: 5
+      critical:
+        rate: 0.1
+        duration_minutes: 5
+    credential_access_anomaly:
+      warning:
+        multiplier: 2.0
+        duration_minutes: 15
+      critical:
+        multiplier: 3.0
+        duration_minutes: 15
+  performance:
+    api_response_time:
+      warning:
+        p95_ms: 300
+        duration_minutes: 5
+      critical:
+        p95_ms: 500
+        duration_minutes: 5
+    authentication_time:
+      warning:
+        p95_ms: 200
+        duration_minutes: 5
+      critical:
+        p95_ms: 400
+        duration_minutes: 5
+    token_generation_time:
+      warning:
+        p95_ms: 100
+        duration_minutes: 5
+      critical:
+        p95_ms: 200
+        duration_minutes: 5
+    conjur_response_time:
+      warning:
+        p95_ms: 150
+        duration_minutes: 5
+      critical:
+        p95_ms: 300
+        duration_minutes: 5
+  availability:
+    api_availability:
+      warning:
+        percentage: 99.5
+        duration_minutes: 5
+      critical:
+        percentage: 99.0
+        duration_minutes: 5
+    conjur_availability:
+      warning:
+        percentage: 99.9
+        duration_minutes: 5
+      critical:
+        percentage: 99.5
+        duration_minutes: 5
+    redis_availability:
+      warning:
+        percentage: 99.9
+        duration_minutes: 5
+      critical:
+        percentage: 99.5
+        duration_minutes: 5
+    database_availability:
+      warning:
+        percentage: 99.9
+        duration_minutes: 5
+      critical:
+        percentage: 99.5
+        duration_minutes: 5
+
+notifications:
+  pagerduty:
+    api_key: ${PAGERDUTY_API_KEY}
+    service_id: ${PAGERDUTY_SERVICE_ID}
+    endpoint: https://events.pagerduty.com/v2/enqueue
+    enabled: true
+    severity_routing:
+      - critical
+  slack:
+    webhook_url: ${SLACK_WEBHOOK_URL}
+    channel: '#payment-api-alerts'
+    username: 'Payment API Monitor'
+    icon_emoji: ':warning:'
+    enabled: true
+    severity_routing:
+      - critical
+      - high
+      - medium
+      - low
+  email:
+    smtp_server: ${SMTP_SERVER}
+    smtp_port: 587
+    smtp_username: ${SMTP_USERNAME}
+    smtp_password: ${SMTP_PASSWORD}
+    from_address: monitoring@example.com
+    to_addresses:
+      - security-team@example.com
+      - operations-team@example.com
+    enabled: true
+    severity_routing:
+      - critical
+      - high
+
+response_times:
+  critical:
+    security: '15m'
+    performance: '30m'
+    availability: '15m'
+  high:
+    security: '1h'
+    performance: '2h'
+    availability: '30m'
+  medium:
+    security: '4h'
+    performance: '8h'
+    availability: '4h'
+  low:
+    security: '24h'
+    performance: '24h'
+    availability: '24h'
+
+alert_retention:
+  active_alerts_max_count: 1000
+  alert_history_days: 90
+
+alert_deduplication:
+  enabled: true
+  window_minutes: 15
+  attributes:
+    - alert_type
+    - severity
+    - service
+
+escalation:
+  auto_escalation_enabled: true
+  escalation_after_minutes:
+    critical: 15
+    high: 30
+    medium: 120
+    low: 480
+  escalation_paths:
+    security:
+      - security-team@example.com
+      - security-manager@example.com
+      - ciso@example.com
+    performance:
+      - operations-team@example.com
+      - ops-manager@example.com
+      - cto@example.com
+    availability:
+      - operations-team@example.com
+      - ops-manager@example.com
+      - cto@example.com
