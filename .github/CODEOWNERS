@@ -1,0 +1,82 @@
+# Default owners for everything in the repo, unless a later match takes precedence
+* @payment-api-admins
+
+# GitHub workflow files
+# DevOps and Security teams own GitHub workflow configurations
+.github/workflows/* @devops-team @security-team
+
+# GitHub templates
+# Project management team owns issue templates
+.github/ISSUE_TEMPLATE/* @project-management
+
+# Backend common code
+# Backend and Architecture teams own common code shared across services
+src/backend/common/** @backend-team @architecture-team
+
+# Payment EAPI
+# Backend and API teams own the Payment External API service
+src/backend/payment-eapi/** @backend-team @api-team
+
+# Payment SAPI
+# Backend and API teams own the Payment System API service
+src/backend/payment-sapi/** @backend-team @api-team
+
+# Credential Rotation
+# Backend and Security teams own the Credential Rotation service
+src/backend/credential-rotation/** @backend-team @security-team
+
+# Monitoring
+# Backend and DevOps teams own the Monitoring service
+src/backend/monitoring/** @backend-team @devops-team
+
+# Kubernetes configurations
+# DevOps and Platform teams own Kubernetes configuration files
+src/backend/kubernetes/** @devops-team @platform-team
+
+# Terraform configurations
+# DevOps and Platform teams own Terraform infrastructure code
+src/backend/terraform/** @devops-team @platform-team
+
+# Docker files
+# DevOps and Security teams own Docker configuration files
+src/backend/Dockerfile-* @devops-team @security-team
+
+# Scripts
+# DevOps and Backend teams own utility scripts
+src/scripts/** @devops-team @backend-team
+
+# Conjur integration
+# Security and Backend teams own Conjur vault integration scripts
+src/scripts/conjur/** @security-team @backend-team
+
+# Infrastructure configurations
+# DevOps and Platform teams own infrastructure configuration files
+infrastructure/** @devops-team @platform-team
+
+# Documentation
+# Documentation and Architecture teams own project documentation
+docs/** @documentation-team @architecture-team
+
+# API documentation
+# API and Documentation teams own API documentation
+docs/api/** @api-team @documentation-team
+
+# Security documentation
+# Security and Documentation teams own security documentation
+docs/architecture/network-security.md @security-team @documentation-team
+
+# Test files
+# QA and Backend teams own test files
+**/*Test.java @qa-team @backend-team
+
+# Security-critical files
+# Security team owns all security-related code
+**/security/** @security-team
+
+# Authentication and token handling
+# Security and Backend teams own authentication-related code
+**/auth*/** @security-team @backend-team
+
+# Token generation and validation
+# Security and Backend teams own token-related code
+**/token/** @security-team @backend-team
